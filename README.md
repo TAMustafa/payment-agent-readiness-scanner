@@ -1,28 +1,74 @@
 # agent-ready-scanner
 
-Read-only scanner (Python + LangGraph) that scores a webshop's readiness for AI shopping agents and outputs a
-report with prioritised fixes. Built for Dutch merchants (WooCommerce, Shopify, Shopware,
-Lightspeed, Magento).
+Read-only scanner (Python + LangGraph) that audits how ready a Dutch webshop is for AI
+shopping agents (ChatGPT, Gemini / Google AI Mode, Perplexity, Claude, Copilot) and reports
+evidence-backed results per check. Built for merchants on WooCommerce, Shopify, Shopware 6,
+Lightspeed eCom and Magento.
 
-- `CLAUDE.md` — working rules and architecture for Claude Code
-- `SPEC.md` — check catalogue, scoring, build steps and acceptance criteria
+**Status (2026-11-08):** build steps 1–2 done; step 3 (AI visibility) is next — see
+[`docs/NEXT_STEP.md`](docs/NEXT_STEP.md).
 
-Status: build steps 1–2 done (static checks D1–D5, S1–S6, P1–P3; headless checkout probe
-C1–C5; JSON output + screenshots). Next: step 3 (AI visibility, V1). Verification log:
-`docs/VERIFY.md`.
+| Category | Checks | Status |
+|---|---|---|
+| D — Discovery & access | D1 robots.txt for AI bots · D2 CDN/WAF blocking · D3 sitemap · D4 data in raw HTML (+ JS render compare) · D5 Merchant Center (manual input) | built |
+| S — Structured product data | S1 Product JSON-LD · S2 offer/price match · S3 GTIN/MPN+brand · S4 shipping & returns markup · S5 reviews · S6 Organization | built |
+| C — Checkout readiness | C1 add to cart · C2 guest checkout · C3 iDEAL/Wero · C4 captcha · C5 policy text | built (C1/C2/C4 need `--checkout`) |
+| P — Agent protocols | P1 UCP profile · P2 platform channel · P3 MCP / ai-catalog / llms.txt | built |
+| V — AI visibility | V1 mentions in AI assistants | step 3 (not built) |
+| Scoring + HTML report | score, grade, top-5 fixes, NL/EN report | step 4 (not built; JSON only) |
 
+## Setup
 ```bash
-uv sync && uv run playwright install chromium
-uv run scanner scan https://example.nl --out scans/          # summary + report.json
+uv sync
+uv run playwright install chromium        # headless browser for the checkout probe
+cp .env.example .env                      # then set SCANNER_CONTACT_URL to a real page
+```
+`SCANNER_CONTACT_URL` appears in our User-Agent (`AgentReadyScanner/<version> (+url)`); the
+CLI warns while it is unset. Run with `uv run --env-file .env scanner ...`.
+
+## Usage
+```bash
+uv run scanner scan https://example.nl                       # summary in the terminal
+uv run scanner scan https://example.nl --out scans/          # + scans/<host>/<ts>/report.json
 uv run scanner scan https://example.nl --checks D,S --json   # selected categories as JSON
 uv run scanner scan https://example.nl --gmc-active --gmc-disapproved-pct 3   # D5 input
-uv run scanner scan https://shop.nl --checkout --out scans/   # + cart/checkout probe (only
-                                                              # with permission; robots.txt kept)
-uv run scanner scan https://shop.nl --checkout-consent --out scans/  # merchant asked: may also
-                                                              # enter robots-disallowed checkout
-uv run scanner graph                                          # pipeline as Mermaid
-uv run ruff check . && uv run mypy scanner && uv run pytest
+uv run scanner scan https://shop.nl --checkout --out scans/  # + cart/checkout probe
+uv run scanner scan https://shop.nl --checkout-consent --out scans/
+uv run scanner graph                                         # pipeline as Mermaid
 ```
 
-Set `SCANNER_CONTACT_URL` (see `.env.example`) before scanning real shops: it appears in our
-User-Agent. Safety guarantees (no payments, orders, logins or data entry): `docs/SAFETY.md`.
+| Option | Meaning |
+|---|---|
+| `--checks` | Comma-separated ids, codes or categories: `D1`, `S2.offer`, `C`, … |
+| `--out DIR` | Write `report.json` (and probe screenshots) to `DIR/<host>/<timestamp>/` |
+| `--json` | Print the report JSON to stdout |
+| `--checkout` | Run the headless cart/checkout probe — **only for shops you may test**; adds 1 item to an anonymous cart, stops at checkout entry, robots.txt respected |
+| `--checkout-consent` | The merchant asked for the scan: probe may also enter cart/checkout paths that robots.txt disallows |
+| `--gmc-active / --gmc-inactive`, `--gmc-disapproved-pct` | Manual Merchant Center input for D5 (never guessed) |
+| `--timeout` | Hard scan timeout in seconds (default 120) |
+| `--visibility` | V1 AI-visibility check — reserved for step 3 (costs money) |
+
+Every result has a status (`pass`, `warn`, `fail`, `not_applicable`, `error`), a score
+fraction, evidence (URL, detail, snippet) and NL/EN fix guidance. Blocked, rate-limited or
+unverifiable checks report `error` with the reason — never a guessed `fail`.
+
+## Safety
+The scanner can never pay, order, log in or type into a shop: GET-only HTTP client,
+network guards that block payment providers, order paths and non-GET requests in the
+browser, a never-click list, and an opt-in probe. Proven by `tests/test_safety.py`
+(including a mutation check). Polite crawling: robots.txt, 1 req/s per host, Retry-After,
+≤ 40 pages, captchas never bypassed. Details: [`docs/SAFETY.md`](docs/SAFETY.md).
+
+## Documentation
+- [`CLAUDE.md`](CLAUDE.md) — working rules, architecture as built, decisions, status
+- [`SPEC.md`](SPEC.md) — check catalogue, scoring, build steps, acceptance criteria
+- [`docs/NEXT_STEP.md`](docs/NEXT_STEP.md) — hand-off for build step 3 (AI visibility)
+- [`docs/VERIFY.md`](docs/VERIFY.md) — reference shops, verification runs, known limits
+- [`docs/SAFETY.md`](docs/SAFETY.md) — safety guarantees and how they are enforced
+
+## Development
+```bash
+uv run ruff check . && uv run mypy scanner && uv run pytest   # ~12 s, 206 tests
+```
+Tests are fixture-based and offline; the probe tests drive real headless Chromium against
+fake shops served through Playwright routes.

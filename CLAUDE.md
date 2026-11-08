@@ -16,72 +16,116 @@ live for Dutch merchants yet (as of Nov 2026) — never claim otherwise in repor
 The full check catalogue and acceptance criteria live in `SPEC.md`. Read it before
 implementing any check.
 
+## Current status (2026-11-08) — start here
+- **Done:** build step 1 (static checks D1–D5, S1–S6, P1–P3, JSON output) and step 2
+  (Playwright checkout probe, C1–C5, D4 render comparison, safety guards). 206 tests green.
+- **Next:** build step 3 (AI visibility, V1). Hand-off with prerequisites, design and file
+  plan: **`docs/NEXT_STEP.md`**. Do not start coding V1 before Tarek has answered the
+  questions listed there (assistants, budget, niche).
+- **Logs:** `docs/VERIFY.md` (reference shops, every verification run, known limits),
+  `docs/SAFETY.md` (what the scanner can never do to a shop, and the tests that prove it).
+- **Repo:** github.com/TAMustafa/payment-agent-readiness-scanner, branch `main`. Tarek commits
+  to `main` in this existing repo; commit/push only when he asks.
+
 ## Stack (decided)
 - Python 3.12+, managed with `uv` (`pyproject.toml`), type hints everywhere, `mypy --strict`
 - **LangGraph** (`StateGraph`) orchestrates the scan pipeline; checks fan out in parallel via
   the `Send` API and merge through `Annotated[list[CheckResult], operator.add]` reducers
 - Checks themselves are **plain deterministic Python functions** — no LLM calls inside them.
   LLMs are used only in the AI-visibility node (V1), via LangChain chat model integrations
-- `httpx` (async) for HTTP, `playwright` (async, Chromium) for rendering and the checkout probe
-- `selectolax` or `beautifulsoup4` for HTML parsing; `extruct` optional for JSON-LD (evaluate first)
+- `httpx` (async) for HTTP, `playwright` (async, Chromium) for the checkout probe + render
+- `selectolax` (lexbor) for HTML. JSON-LD via stdlib `json`, microdata via our own small
+  parser (`scanner/parse/product.py`); `extruct` evaluated and not needed
 - `pydantic` v2 for config, inputs and check-result validation
 - `typer` for the CLI; `pytest` + `pytest-asyncio` for tests; `ruff` for lint/format
 - Optional: LangSmith tracing via env vars for debugging the graph and V1 costs
 
-Before adding any other dependency: check it is maintained, explain why, keep it minimal.
-Check current LangGraph docs (docs.langchain.com/oss/python/langgraph) before using any API
-you are not sure about — the API changes between minor versions. Pin versions in pyproject.
+Pinned (exact): langgraph 1.2.20, pydantic 2.14.3, typer 0.28.0, httpx 0.28.1,
+selectolax 1.0.2, playwright 1.64.1; dev: mypy 2.4.1, pytest 9.2.0, pytest-asyncio 1.4.1.post1,
+ruff 0.17.4. Before adding any other dependency: ask Tarek, check it is maintained, explain
+why, keep it minimal, pin it. Check current LangGraph docs
+(docs.langchain.com/oss/python/langgraph) before using any API you are not sure about.
 
 ## Non-negotiable rules
-1. **Read-only.** Never submit forms, create accounts, place orders, enter payment
-   details, or start a payment redirect. The checkout probe stops at the payment-method
-   selection step.
-2. **Polite crawling.** Identify as `AgentReadyScanner/<version> (+contact URL)`, respect
-   robots.txt for our own user agent, max 1 request/second per host, max ~40 pages per scan,
-   hard timeout per scan (default 120s).
-3. **No secrets in code or logs.** API keys via `.env` (gitignored); provide `.env.example`.
-   LangSmith tracing must not log full page HTML or any personal data.
+1. **Read-only.** Never submit forms with data, create accounts, log in, place orders, enter
+   payment details, or start a payment redirect. The checkout probe stops at the **checkout
+   entry** (first checkout page/drawer) and never types anything. Enforced in code by
+   network + click guards (`scanner/checkout/probe.py::_Probe.guard`, `looks_like_checkout`)
+   and proven by `tests/test_safety.py` — keep those tests passing; extend them when the
+   probe changes. Details: `docs/SAFETY.md`.
+2. **Polite crawling.** Identify as `AgentReadyScanner/<version> (+contact URL)`
+   (`SCANNER_CONTACT_URL`), respect robots.txt for our own user agent, max 1 request/second
+   per host (doubled on 429, Retry-After honoured), max ~40 pages per scan, hard timeout per
+   scan (default 120s). Never solve or bypass captchas / bot challenges — report them.
+3. **No secrets in code or logs.** API keys via `.env` (gitignored); keep `.env.example`
+   current. LangSmith tracing must not log full page HTML or any personal data.
 4. **Deterministic and explainable.** Every check returns evidence (URL, snippet, header,
    status code) so a human can verify the result. No score without evidence.
 5. **No fabricated facts in reports.** Report copy is templated from `SPEC.md` guidance;
    LLMs may only be used in the AI-visibility check (step 3), and their raw output is stored.
-6. **Privacy/GDPR.** Do not store personal data found on pages. Store only what the check needs.
+6. **Privacy/GDPR.** Do not store personal data found on pages. Store only what the check
+   needs. No cookies kept between requests; the browser session is discarded.
 
-## Architecture
+### Decisions by Tarek (2026-11-08) — do not change without asking
+- **Checkout probe is opt-in:** `--checkout` (we may test this shop; robots.txt respected) or
+  `--checkout-consent` (merchant asked; may also enter robots-disallowed cart/checkout).
+  Default scans report C1/C2/C4 as "not tested".
+- Probe pacing: block images/fonts/media/trackers; ≥1 s between navigations via the shared
+  per-host limiter; each navigation counts against the page budget.
+- Cookie banners: reject first, accept only if there is no other way through.
+- Sampling: 8 products / 2 categories / ≤3 sitemap files (shops like Shopify rate-limit
+  polite crawlers: 429 + Retry-After 60 after ~2 product pages).
+- D2 test requests carry the bot's User-Agent **plus** our identity — never impersonate.
+- Live probe runs on third-party shops need Tarek's approval (reference shops: once each).
+
+## Architecture (as built)
 ```
 scanner/
-  cli.py                 # typer entry: scan <url> [--json] [--out dir] [--checks a,b] [--visibility]
-  graph.py               # LangGraph StateGraph definition (see below)
-  state.py               # ScanState TypedDict + reducers
-  fetch/                 # httpx client (rate-limit, UA, timeouts), robots parser
-  sampling/              # find product/category/policy pages (sitemap -> link crawl fallback)
-  checks/                # one module per check; registry maps check id -> function
-  checks/copy/           # nl/en guidance strings per check id
-  platform/              # fingerprinting + support table
-  visibility/            # V1 prompt runner (only LLM-using code)
-  report/                # scoring, top-5 fixes, JSON + HTML (Jinja2) rendering
-  models.py              # pydantic models: CheckResult, ScanReport, ...
+  cli.py            # typer: scan <url> [--json] [--out dir] [--checks D,S1,...] [--visibility]
+                    #   [--checkout | --checkout-consent] [--gmc-active ...] [--timeout]; graph
+  graph.py          # StateGraph wiring + run_scan(); context_schema=ScanDeps
+  nodes.py          # all graph nodes (thin; delegate to the packages below)
+  state.py          # ScanState TypedDict + reducers; RunCheckInput (Send payload)
+  deps.py           # ScanDeps: runtime context (PoliteClient, test route hook) — not in state
+  models.py         # pydantic models: CheckResult, ScanContext, ScanReport, CheckoutProbe, ...
+  bots.py           # AI bot tokens + UAs per vendor (sources + date verified)
+  fetch/            # client.py (polite httpx GET-only client, budgets, backoff), robots.py
+                    # (RFC 9309), challenge.py (CDN/WAF detection), agents.py (D2 probes)
+  sampling/         # sitemap.py, urls.py (heuristics), select.py (products/categories/policies)
+  parse/            # html.py (links, JSON-LD), product.py (product/offer/org extraction)
+  platform/         # fingerprint.py, support.py (agentic channel table, sources + date)
+  checkout/         # probe.py (Playwright probe + safety guards), markers.py (NL/EN patterns)
+  checks/           # one module per check (d1_..., s1_..., c1_..., p1_...); registry.py maps
+                    # id -> spec + function; base.py result(); per_page.py; c_common.py
+  checks/copy/      # nl/en guidance per check id
+  visibility/       # V1 — NOT YET BUILT (step 3)
+  report/           # scoring + HTML — NOT YET BUILT (step 4)
 tests/
-  fixtures/              # saved HTML/robots/JSON-LD samples per platform
+  fixtures/         # robots, sitemaps, home/product pages per platform, UCP profile
+  test_safety.py    # never-pay/never-type guarantees (AST scan, guard table, hostile shops)
 ```
 
 Graph (nodes are async functions; each returns a partial state update):
 ```
-START -> normalise_url -> fetch_basics (robots, sitemap, /.well-known/ucp)
+START -> normalise_url -> fetch_basics (robots, home, sitemaps)
+      -> fetch_agent_endpoints (/.well-known/ucp, ai-catalog.json, llms.txt)
       -> fingerprint_platform -> sample_pages
-      -> [fan-out via Send] run_check (one invocation per enabled check id)
-      -> checkout_probe (step 2)  -> visibility (step 3, only if --visibility)
-      -> score -> render_report -> END
+      -> probe_user_agents (D2 data) -> checkout_probe (opt-in Playwright; C1-C4, D4 render)
+      -> [fan-out via Send] run_check (one per enabled check id, incl. C1-C5)
+      -> visibility (step 3, only if --visibility; currently a stub) -> score (stub)
+      -> render_report -> END
 ```
+- Data collection happens in network nodes **before** the fan-out; checks only read
+  `ScanContext` and never fetch. The probe runs before the fan-out for the same reason.
 - `ScanState.results: Annotated[list[CheckResult], operator.add]` collects parallel results.
-- Shared fetched data (pages, robots, headers) lives in state so checks never refetch.
-- Use a node-level retry policy only for network nodes, never for checks.
-- An exception inside a check must become `status="error"` in its CheckResult and must not
-  abort the graph.
-- No checkpointer needed in v1 (single-run CLI); keep the graph compatible with adding one
-  later (web UI / queued scans).
+- Retry policy only on network nodes, never on checks. An exception inside a check becomes
+  `status="error"` and never aborts the graph (`nodes.run_check`).
+- The HTTP client lives in the LangGraph runtime context (`ScanDeps`), not in state, so a
+  checkpointer can be added later (web UI / queued scans).
+- Time budget: the client stops fetching before the hard timeout so a partial report always
+  renders; the sampler keeps time free for D2 probes (15 s) and the checkout probe (30 s).
 
-Core contract (reuse of the QualityCheck pattern from AiPoweredMerchantActivation):
+Core contract (do not change without asking):
 ```python
 CheckStatus = Literal["pass", "warn", "fail", "not_applicable", "error"]
 
@@ -104,21 +148,32 @@ class CheckResult(BaseModel):
     effort: Literal["S", "M", "L"]
 
 
-# A check: async def check_d1(ctx: ScanContext) -> CheckResult
+# A check: async def check(ctx: ScanContext) -> CheckResult   (build via checks/base.result)
 ```
+Status conventions used everywhere: blocked/rate-limited/unverifiable → `error` (never a
+guessed `fail`); nothing to test → `not_applicable`; emerging standards (P3) → `warn`, never
+`fail`.
 
 ## How to work (agile, small increments)
 - Build in the order of SPEC.md "Build steps". Finish and verify one step before the next.
 - Per check: write a fixture-based unit test first, then the implementation.
-- After each step: run `uv run ruff check . && uv run mypy scanner && uv run pytest`, then a live scan of the 5 reference shops
-  listed in SPEC.md, and compare against a manual check. Record results in `docs/VERIFY.md`.
+- After each step: `uv run ruff check . && uv run mypy scanner && uv run pytest`, then a live
+  scan of the reference shops in `docs/VERIFY.md`, compare against a manual check (open the
+  page / curl it), and record results + fixes + limits in `docs/VERIFY.md`.
+- Expect false results on live data and hunt them: every round so far found 2–4 (variant
+  fields, soft 404s, rate-limit pages read as content, shop ratings in product markup, …).
 - State assumptions explicitly; when a platform behaviour or protocol detail is uncertain,
   check current official docs before implementing and cite the URL in a code comment.
 - Ask before: adding dependencies, changing the CheckResult contract, deleting files,
-  anything that would write to or interact with a live shop beyond reading.
+  anything that would write to or interact with a live shop beyond reading, anything that
+  costs money (LLM APIs in V1).
+- Live-scan etiquette: back-to-back scans from one IP make shops (Shopify, fixje) rate-limit
+  harder; space them out. `--checks` limits a run (`--checks D2,C1`, `--checks S`).
 
-## Commands (to be created in step 1)
+## Commands
 - `uv sync` then `uv run playwright install chromium`
-- `uv run scanner scan https://example.nl --out scans/`
+- `uv run scanner scan https://example.nl --out scans/` (report.json + screenshots)
+- `uv run scanner scan https://example.nl --checks D,S --json`
+- `uv run scanner graph` (Mermaid of the pipeline)
 - `uv run ruff check . && uv run mypy scanner`
-- `uv run pytest`
+- `uv run pytest` (≈12 s; 7+ tests drive real headless Chromium against fake shops)

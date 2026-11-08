@@ -155,10 +155,14 @@ Magento), ideally in the chosen niche. Record them in `docs/VERIFY.md` with the 
 Do not hard-code them in source.
 
 ## 8. Build steps
-1. **CLI + static checks**: project setup (uv, LangGraph skeleton graph with stub nodes first), fetch layer, robots, sitemap, sampling,
+Status 2026-11-08: steps 1–2 **done** (see `docs/VERIFY.md`); step 3 next
+(`docs/NEXT_STEP.md`).
+
+1. **CLI + static checks** *(done)*: project setup (uv, LangGraph skeleton graph with stub nodes first), fetch layer, robots, sitemap, sampling,
    platform fingerprint, D1–D4, S1–S6, P1–P3, JSON output. Verify on fixtures + 5 shops.
-2. **Checkout probe**: Playwright, C1–C5, screenshots saved as evidence.
-3. **AI visibility**: V1 behind flag, cost logging, raw response storage.
+2. **Checkout probe** *(done)*: Playwright, C1–C5, screenshots saved as evidence. Opt-in
+   (`--checkout` / `--checkout-consent`), hard safety guards (`docs/SAFETY.md`).
+3. **AI visibility** *(next)*: V1 behind flag, cost logging, raw response storage.
 4. **Report**: scoring, top 5 fixes, NL/EN HTML report.
 5. **Web front-end** (only after pilots): URL form → queued scan → report link.
 
@@ -169,3 +173,9 @@ how, and what is not.
 - Niche for the first outreach (affects default prompts in V1)
 - Which assistants/APIs to use for V1 and monthly budget
 - Brand name of the service for report header
+- (added 2026-11-08) V1 prompt generation: deterministic templates or LLM-generated
+- (added 2026-11-08) Effort sizes S/M/L per check (initial estimates in `registry.py`)
+- (added 2026-11-08) D5 thresholds: ≤ 5 % disapproved = pass, ≤ 20 % = warn (initial choice)
+- (added 2026-11-08) §6 support table: differences found vs. current vendor sources (above)
+- (added 2026-11-08) Shopify shops yield 0–2 product pages per polite scan; accept, or
+  allow a longer scan for S-checks?
