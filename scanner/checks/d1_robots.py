@@ -17,6 +17,15 @@ from scanner.sampling.urls import is_product_entry
 
 CHECK_ID = "D1.robots_ai_crawlers"
 BLOCKED_FOR_US = frozenset({401, 403, 429})
+
+
+def refusal_reason(status: int) -> str:
+    """Wording for a status that hides a file from our scanner."""
+    if status == 429:
+        return "rate limited our scanner (HTTP 429)"
+    return f"refused to our scanner (HTTP {status}, likely bot protection)"
+
+
 MAX_PRODUCT_PATHS = 3
 MAX_OTHER_PATHS = 2
 
@@ -59,9 +68,8 @@ async def check(ctx: ScanContext) -> CheckResult:
             [
                 Evidence(
                     url=robots_url,
-                    detail=f"HTTP {res.status_code}: robots.txt refused to our scanner "
-                    "(likely bot protection), so it cannot be verified. "
-                    "D2 tests AI user agents directly.",
+                    detail=f"robots.txt {refusal_reason(res.status_code)}, so it cannot be "
+                    "verified. D2 tests AI user agents directly.",
                 )
             ],
         )

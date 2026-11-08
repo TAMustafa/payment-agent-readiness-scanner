@@ -7,14 +7,15 @@ billion-laughs / quadratic blowup and does not resolve external entities
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from scanner.fetch.client import PoliteClient
 from scanner.models import SitemapEntry, SitemapInfo, SitemapSource
 
-MAX_SITEMAP_FETCHES = 6  # out of the ~40-request scan budget
+MAX_SITEMAP_FETCHES = 3  # out of the ~40-request scan budget; kept low for rate limits
 MAX_ENTRIES = 5000
 
 
@@ -52,13 +53,22 @@ def parse_sitemap(xml_text: str) -> ParsedSitemap:
     return parsed
 
 
-def _child_priority(url: str) -> int:
+_LOCALE_PREFIX = re.compile(r"^/([a-z]{2})(-[a-z]{2})?/", re.I)
+
+
+def _child_priority(url: str) -> tuple[int, int]:
+    """Product sitemaps first; within a kind, the default or Dutch locale before other
+    language copies (e.g. Shopify /it/sitemap_products_1.xml)."""
     u = url.lower()
-    if "product" in u:
-        return 0
-    if any(k in u for k in ("categor", "collection")):
-        return 1
-    return 2
+    if any(k in u for k in ("categor", "collection", "product_cat")):
+        kind = 1
+    elif "product" in u:
+        kind = 0
+    else:
+        kind = 2
+    m = _LOCALE_PREFIX.match(urlsplit(url).path)
+    locale = 0 if m is None or m.group(1).lower() == "nl" else 1
+    return (kind, locale)
 
 
 async def collect_sitemaps(

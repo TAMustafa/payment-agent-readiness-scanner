@@ -17,18 +17,20 @@ from scanner import __version__
 from scanner.checks.copy import get_guidance
 from scanner.checks.registry import REGISTRY, static_check_ids
 from scanner.deps import ScanDeps
+from scanner.fetch.agents import probe_agents
 from scanner.fetch.client import PoliteClient
 from scanner.fetch.robots import robots_from_resource
 from scanner.models import (
+    AgentEndpoints,
     CheckResult,
     Evidence,
     FetchedResource,
-    PageSample,
-    PlatformInfo,
     ScanContext,
     ScanReport,
     SiteBasics,
 )
+from scanner.platform.fingerprint import fingerprint
+from scanner.sampling.select import sample
 from scanner.sampling.sitemap import collect_sitemaps
 from scanner.state import RunCheckInput, ScanState
 
@@ -55,12 +57,16 @@ async def normalise_url(state: ScanState) -> Update:
 
 async def fetch_basics(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
     """robots.txt -> home (resolves redirects) -> robots.txt of final host if it changed
-    -> sitemaps -> /.well-known/ucp. Robots is registered first so later fetches respect it."""
+    -> sitemaps. Robots is registered first so later fetches respect it. A rate-limited
+    (429) home page is fetched once more: fingerprinting and home-page checks need it."""
     client = runtime.context.client
     origin = state["origin"]
 
     robots_res = await _fetch_robots(client, origin)
     home = await client.get(origin + "/")
+    if home.status_code == 429:
+        # The client already honours Retry-After / backs off before this second attempt.
+        home = await client.get(origin + "/")
     final_url = home.final_url or origin + "/"
     final_origin = normalise(final_url)
     if final_origin != origin:
@@ -68,7 +74,6 @@ async def fetch_basics(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
 
     robots = robots_from_resource(robots_res)
     sitemap = await collect_sitemaps(client, final_origin, robots.sitemaps if robots else [])
-    ucp = await client.get(final_origin + "/.well-known/ucp")
 
     return {
         "origin": final_origin,
@@ -79,7 +84,6 @@ async def fetch_basics(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
             home=home,
             robots=robots_res,
             sitemap=sitemap,
-            ucp=ucp,
         ),
     }
 
@@ -96,13 +100,36 @@ async def _fetch_robots(client: PoliteClient, origin: str) -> FetchedResource:
 
 
 async def fingerprint_platform(state: ScanState) -> Update:
-    # STUB: will detect platform from headers / generator meta / asset paths.
-    return {"platform": PlatformInfo()}
+    return {"platform": fingerprint(state["basics"].home)}
 
 
-async def sample_pages(state: ScanState) -> Update:
-    # STUB: will pick product / category / policy pages (sitemap -> link-crawl fallback).
-    return {"pages": PageSample()}
+async def sample_pages(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
+    opts = state["options"]
+    pages = await sample(
+        runtime.context.client,
+        state["basics"],
+        state["platform"],
+        max_products=opts.max_products,
+        max_categories=opts.max_categories,
+    )
+    return {"pages": pages}
+
+
+async def fetch_agent_endpoints(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
+    client = runtime.context.client
+    origin = state["origin"]
+    return {
+        "endpoints": AgentEndpoints(
+            ucp=await client.get(origin + "/.well-known/ucp"),
+            ai_catalog=await client.get(origin + "/.well-known/ai-catalog.json"),
+            llms_txt=await client.get(origin + "/llms.txt"),
+        )
+    }
+
+
+async def probe_user_agents(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
+    probes = await probe_agents(runtime.context.client, state["basics"])
+    return {"agent_probes": probes}
 
 
 def fan_out_checks(state: ScanState) -> list[Send] | str:
@@ -116,6 +143,8 @@ def fan_out_checks(state: ScanState) -> list[Send] | str:
         basics=state["basics"],
         platform=state["platform"],
         pages=state["pages"],
+        agent_probes=state["agent_probes"],
+        endpoints=state["endpoints"],
     )
     return [Send("run_check", RunCheckInput(check_id=i, ctx=ctx)) for i in ids]
 
@@ -162,7 +191,8 @@ async def score(state: ScanState) -> Update:
     return {"score": None, "excluded_checks": excluded}
 
 
-async def render_report(state: ScanState) -> Update:
+async def render_report(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
+    pages = state["pages"]
     # Builds the validated ScanReport; HTML rendering arrives in build step 4.
     report = ScanReport(
         scanner_version=__version__,
@@ -171,6 +201,22 @@ async def render_report(state: ScanState) -> Update:
         started_at=state["started_at"],
         finished_at=datetime.now(UTC),
         platform=state["platform"],
+        sampled={
+            "products": [p.url for p in pages.products],
+            "categories": [p.url for p in pages.categories],
+            **{f"policy:{k}": [v.url] for k, v in pages.policies.items()},
+        },
+        sampling_notes=pages.notes
+        + [
+            Evidence(detail=f"Host rate-limited us (HTTP 429) {n}x on {h}; slowed down")
+            for h, n in runtime.context.client.rate_limited.items()
+        ]
+        + (
+            [Evidence(detail="Fetching stopped early: scan time budget reached")]
+            if runtime.context.client.stopped_for_time
+            else []
+        ),
+        requests_made=runtime.context.client.requests_made,
         score=state.get("score"),
         grade=None,
         excluded_checks=state.get("excluded_checks", 0),

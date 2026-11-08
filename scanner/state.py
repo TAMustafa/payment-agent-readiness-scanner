@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Annotated, NotRequired, TypedDict
 
 from scanner.models import (
+    AgentEndpoints,
+    AgentProbes,
     CheckResult,
     PageSample,
     PlatformInfo,
@@ -27,6 +29,8 @@ class ScanState(TypedDict):
     basics: NotRequired[SiteBasics]
     platform: NotRequired[PlatformInfo]
     pages: NotRequired[PageSample]
+    agent_probes: NotRequired[AgentProbes]
+    endpoints: NotRequired[AgentEndpoints]
     # parallel check results are merged by list concatenation
     results: Annotated[list[CheckResult], operator.add]
     score: NotRequired[float | None]

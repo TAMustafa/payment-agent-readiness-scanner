@@ -22,9 +22,13 @@ v1 is done when:
 1. Normalise URL, resolve redirects, record final origin and HTTPS status.
 2. Fetch `robots.txt`, `sitemap.xml` (and sitemap index), `/.well-known/ucp`.
 3. Fingerprint platform (section 6).
-4. Sample pages: up to 20 product pages, 3 category pages, policy pages
+4. Sample pages: up to 8 product pages, 2 category pages, policy pages
    (shipping, returns, terms, privacy). Prefer sitemap; fall back to link crawl from home.
-   Product page detection: JSON-LD `Product` or platform URL patterns.
+   Product page detection: JSON-LD `Product` (one per page), Product microdata, or
+   platform URL patterns.
+   *Changed 2026-11-08 (was 20 products / 3 categories):* shops that rate-limit polite
+   crawlers (Shopify: HTTP 429 + Retry-After 60 after ~10 requests) must still yield data
+   within the 2-minute budget. Sizes are configurable (`max_products`, `max_categories`).
 5. Run checks (section 4). Static checks use raw HTML; also render 3 product pages with
    Playwright to compare (JSON-LD injected by JS is invisible to many crawlers → warn).
 6. Aggregate score (section 5), render JSON + HTML report.
@@ -114,6 +118,20 @@ Support table (`scanner/platform/support.py`, each row with source URL + date ve
 - Shopware 6: official "Agentic Commerce (Beta)" plugin (stability issues reported)
 - Lightspeed / Magento: no native channel known; feed-based approach
 Re-verify this table before each release; it changes monthly.
+
+*Verification 2026-11-08 (implemented in `scanner/platform/support.py`, sources cited there)
+differs from the rows above:*
+- Shopify: "enabled automatically for eligible stores"; criteria and NL availability are not
+  stated publicly. No source confirmed a US/CA shipping requirement. Shopify serves a UCP
+  profile at `/.well-known/ucp` when enabled (seen live on a Dutch Shopify shop).
+- WooCommerce: no official agentic checkout; Woo reports testing partner solutions (Stripe
+  ACP, Google). Third-party UCP plugins on wordpress.org not yet reviewed.
+- Shopware 6: no official Shopware AG "Agentic Commerce" plugin found; a third-party
+  extension (great2gether, "Great Agentic Commerce") exports AI feeds + llms.txt and does
+  not sell inside AI chats.
+- Magento/Adobe: sources could not be read; marked "unknown".
+- Shopify's old Storefront MCP endpoint `/api/mcp` was removed; MCP now via UCP
+  (`/api/ucp/mcp`).
 
 ## 7. Reference shops for verification
 Pick 5 public Dutch shops, one per platform (Shopify, WooCommerce, Shopware, Lightspeed,

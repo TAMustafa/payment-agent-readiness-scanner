@@ -78,9 +78,14 @@ async def test_index_follows_product_child_first(make_shop: Callable[..., FakeSh
     )
     async with PoliteClient(transport=shop.transport, min_interval_s=0) as c:
         info = await collect_sitemaps(c, ORIGIN, [f"{ORIGIN}/sitemap_index.xml"])
-    assert shop.paths()[:2] == ["/sitemap_index.xml", "/product-sitemap.xml"]
-    assert [s.kind for s in info.sources] == ["index", "urlset", "unreachable", "urlset"]
-    assert len(info.entries) == 7
+    # max 3 sitemap files: index, then product sitemap, then category sitemap (404 here)
+    assert shop.paths() == [
+        "/sitemap_index.xml",
+        "/product-sitemap.xml",
+        "/product_cat-sitemap.xml",
+    ]
+    assert [s.kind for s in info.sources] == ["index", "urlset", "unreachable"]
+    assert len(info.entries) == 3 and info.truncated
 
 
 async def test_fallback_to_sitemap_index_when_no_robots_line(
@@ -98,3 +103,28 @@ def test_invalid_sitemap_rejected() -> None:
 
     with pytest.raises(ValueError):
         parse_sitemap(fixture("sitemaps/invalid.html"))
+
+
+async def test_time_budget_stops_fetching_gracefully(make_shop: Callable[..., FakeShop]) -> None:
+    shop = make_shop()
+    async with PoliteClient(
+        transport=shop.transport, min_interval_s=0.3, time_budget_s=0.5, timeout_s=0.1
+    ) as c:
+        results = [await c.get(f"{ORIGIN}/{i}") for i in range(5)]
+    assert c.stopped_for_time
+    assert results[-1].error == "scan time budget reached"
+    assert 1 <= len(shop.requests) < 5
+
+
+async def test_reserve_refuses_request_that_would_eat_kept_time(
+    make_shop: Callable[..., FakeShop],
+) -> None:
+    shop = make_shop()
+    async with PoliteClient(
+        transport=shop.transport, min_interval_s=0, time_budget_s=5, timeout_s=1
+    ) as c:
+        refused = await c.get(f"{ORIGIN}/a", reserve_s=4.5)  # 1 s timeout > 0.5 s left
+        allowed = await c.get(f"{ORIGIN}/b")  # later step: no reserve
+    assert refused.error and "kept for later" in refused.error and c.reserve_hit
+    assert allowed.status_code == 404 and not c.stopped_for_time
+    assert shop.paths() == ["/b"]

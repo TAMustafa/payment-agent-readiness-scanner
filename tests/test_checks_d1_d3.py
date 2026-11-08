@@ -96,11 +96,11 @@ async def test_d3_full_marks_when_all_subcriteria_met() -> None:
     assert r.status == "pass" and r.score_fraction == 1.0
 
 
-async def test_d3_index_with_low_lastmod_share_is_warn() -> None:
+async def test_d3_index_reads_product_child_within_file_cap() -> None:
     r = await scan(woo_shop(fixture("robots/training_blocked.txt")), "D3")
-    # 7 URLs, 2 with lastmod -> lastmod criterion fails; other three pass
-    assert r.status == "warn" and r.score_fraction == 0.75
-    assert any("2/7" in e.detail for e in r.evidence)
+    # index -> product-sitemap (3 URLs, 2 with lastmod = 67%) -> category sitemap (404); cap 3
+    assert r.status == "pass" and r.score_fraction == 1.0
+    assert "more files not read" in r.evidence[0].detail
 
 
 async def test_d3_no_sitemap_is_fail() -> None:
@@ -127,3 +127,51 @@ async def test_d1_and_d3_blocked_for_scanner_is_error_not_guess() -> None:
     d3 = await scan(shop, "D3")
     assert d1.status == "error" and "403" in d1.evidence[0].detail
     assert d3.status == "error" and "refused" in d3.evidence[0].detail
+    assert "rate limited" not in d3.evidence[0].detail
+
+
+async def test_d3_counts_sampled_products_found_in_sitemap() -> None:
+    """Magento-style .html product URLs are not recognised by shape, but sampling confirmed
+    them via JSON-LD -> the sitemap does contain product URLs."""
+    sitemap = (
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"<url><loc>{ORIGIN}/accu-500wh.html</loc><lastmod>2026-11-01</lastmod></url>"
+        "</urlset>"
+    )
+    shop = FakeShop(
+        {
+            f"{ORIGIN}/robots.txt": (
+                200,
+                f"User-agent: *\nDisallow:\nSitemap: {ORIGIN}/sitemap.xml\n",
+            ),
+            f"{ORIGIN}/sitemap.xml": (200, sitemap),
+            f"{ORIGIN}/accu-500wh.html": (200, fixture("pages/product_jsonld.html")),
+        }
+    )
+    r = await scan(shop, "D3")
+    assert r.status == "pass", [e.detail for e in r.evidence]
+
+
+async def test_d3_magento_html_shape_counts_as_likely_products() -> None:
+    sitemap = (
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"<url><loc>{ORIGIN}/theepot-wit-00041073.html</loc><lastmod>2026-11-01</lastmod></url>"
+        "</urlset>"
+    )
+    shop = FakeShop(
+        {
+            f"{ORIGIN}/": (200, fixture("home/magento.html")),
+            f"{ORIGIN}/robots.txt": (200, f"Sitemap: {ORIGIN}/sitemap.xml\n"),
+            f"{ORIGIN}/sitemap.xml": (200, sitemap),
+        }
+    )
+    r = await scan(shop, "D3")
+    assert r.status == "pass"
+    assert any("likely products" in e.detail for e in r.evidence)
+
+
+async def test_d3_rate_limited_sitemap_is_error_not_fail() -> None:
+    shop = FakeShop({f"{ORIGIN}/sitemap.xml": (429, "", {"retry-after": "0"})})  # index: 404
+    r = await scan(shop, "D3")
+    assert r.status == "error"
+    assert "rate limited our scanner (HTTP 429)" in r.evidence[0].detail

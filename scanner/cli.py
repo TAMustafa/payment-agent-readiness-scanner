@@ -34,12 +34,22 @@ def scan(
         bool, typer.Option("--visibility", help="Run V1 AI-visibility check (costs money)")
     ] = False,
     timeout: Annotated[float, typer.Option("--timeout", help="Hard scan timeout, seconds")] = 120.0,
+    gmc_active: Annotated[
+        bool | None,
+        typer.Option("--gmc-active/--gmc-inactive", help="D5 manual input: Merchant Center feed"),
+    ] = None,
+    gmc_disapproved_pct: Annotated[
+        float | None,
+        typer.Option("--gmc-disapproved-pct", help="D5 manual input: % products disapproved"),
+    ] = None,
 ) -> None:
     """Scan a shop and print or save the report."""
     options = ScanOptions(
         checks=checks.split(",") if checks else None,
         visibility=visibility,
         timeout_s=timeout,
+        merchant_center_active=gmc_active,
+        merchant_center_disapproved_pct=gmc_disapproved_pct,
     )
     try:
         report = asyncio.run(asyncio.wait_for(run_scan(url, options), timeout=timeout))
@@ -77,6 +87,12 @@ def _write_report(report: ScanReport, out: Path) -> Path:
 
 def _print_summary(report: ScanReport) -> None:
     typer.echo(f"{report.origin}  platform={report.platform.platform}  score={report.score}")
+    for sig in report.platform.signals[:3]:
+        typer.echo(f"  platform signal: {sig.detail}")
+    counts = {k: len(v) for k, v in report.sampled.items()}
+    typer.echo(f"  sampled: {counts}  requests: {report.requests_made}")
+    for note in report.sampling_notes:
+        typer.echo(f"  note: {note.detail}")
     for r in report.results:
         detail = r.evidence[0].detail if r.evidence else ""
         typer.echo(f"  {r.status:<14} {r.id:<26} {detail}")

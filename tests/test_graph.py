@@ -7,7 +7,7 @@ import pytest
 from scanner.checks import registry
 from scanner.checks.registry import REGISTRY, CheckSpec, static_check_ids
 from scanner.graph import build_graph, run_scan
-from scanner.models import CheckResult, Evidence, ScanContext, ScanOptions, ScanReport
+from scanner.models import CheckResult, ScanContext, ScanOptions, ScanReport
 from scanner.nodes import normalise
 from tests.conftest import FakeShop
 
@@ -36,6 +36,7 @@ def test_category_weights_match_spec() -> None:
 def test_static_check_filter_by_prefix() -> None:
     assert static_check_ids(["D1", "S2.offer"]) == ["D1.robots_ai_crawlers", "S2.offer"]
     assert "C1.add_to_cart" not in static_check_ids()  # produced by checkout_probe
+    assert static_check_ids(["S"]) == [i for i in static_check_ids() if i.startswith("S")]
 
 
 @pytest.mark.parametrize(
@@ -70,14 +71,14 @@ def test_graph_compiles_with_expected_nodes() -> None:
     } <= nodes
 
 
-async def test_stub_scan_turns_unimplemented_checks_into_errors() -> None:
+async def test_offline_scan_runs_every_static_check() -> None:
     report = await offline_scan()
     assert report.origin == "https://example.nl"
     assert [r.id for r in report.results] == sorted(static_check_ids())
-    implemented = {"D1.robots_ai_crawlers", "D3.sitemap"}
+    assert len(report.results) == 14  # D1-D5, S1-S6, P1-P3 (C* and V1 come from other nodes)
     for r in report.results:
-        assert (r.status != "error") if r.id in implemented else (r.status == "error"), r.id
-    assert report.excluded_checks == len(report.results) - len(implemented)
+        assert r.evidence, r.id  # no result without evidence (CLAUDE.md rule 4)
+        assert "Traceback" not in r.evidence[0].detail, r.id
 
 
 async def test_check_selection_limits_fan_out() -> None:
@@ -91,24 +92,16 @@ async def test_no_checks_selected_still_completes() -> None:
 
 
 async def test_one_failing_check_does_not_abort_others(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def ok(ctx: ScanContext) -> CheckResult:
-        return CheckResult(
-            id="D3.sitemap",
-            category="discovery",
-            label="x",
-            status="pass",
-            weight=5,
-            score_fraction=1.0,
-            evidence=[Evidence(detail="ok")],
-            guidance="",
-            effort="S",
-        )
+    async def boom(ctx: ScanContext) -> CheckResult:
+        raise RuntimeError("simulated bug")
 
-    spec = REGISTRY["D3.sitemap"]
-    patched = {**REGISTRY, "D3.sitemap": CheckSpec(**{**spec.__dict__, "func": ok})}
+    spec = REGISTRY["P2.platform_support"]
+    patched = {**REGISTRY, "P2.platform_support": CheckSpec(**{**spec.__dict__, "func": boom})}
     monkeypatch.setattr(registry, "REGISTRY", patched)
     monkeypatch.setattr("scanner.nodes.REGISTRY", patched)
 
-    report = await offline_scan(ScanOptions(checks=["P2", "D3"]))
-    by_id = {r.id: r.status for r in report.results}
-    assert by_id == {"P2.platform_support": "error", "D3.sitemap": "pass"}
+    report = await offline_scan(ScanOptions(checks=["P2", "D1"]))
+    by_id = {r.id: r for r in report.results}
+    assert by_id["P2.platform_support"].status == "error"
+    assert "RuntimeError: simulated bug" in by_id["P2.platform_support"].evidence[0].detail
+    assert by_id["D1.robots_ai_crawlers"].status == "pass"

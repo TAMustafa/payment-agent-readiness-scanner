@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from scanner.checks import registry  # module import: avoids a registry<->check cycle
 from scanner.checks.copy import get_guidance
 from scanner.models import CheckResult, CheckStatus, Evidence, ScanContext
 
@@ -15,7 +14,11 @@ def result(
     evidence: list[Evidence],
 ) -> CheckResult:
     """Build a CheckResult with metadata from the registry and guidance from copy/."""
-    spec = registry.REGISTRY[check_id]
+    # Imported at call time: the registry imports every check module, so a module-level
+    # import here would be circular whichever module is imported first.
+    from scanner.checks.registry import REGISTRY
+
+    spec = REGISTRY[check_id]
     return CheckResult(
         id=spec.id,
         category=spec.category,
