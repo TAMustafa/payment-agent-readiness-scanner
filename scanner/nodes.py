@@ -1,0 +1,179 @@
+"""Graph nodes. Each is an async function returning a partial ScanState update.
+
+Skeleton: network/sampling/scoring nodes are stubs that return empty-but-valid data.
+They will delegate to scanner.fetch / sampling / platform / report as those are built.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any
+from urllib.parse import urlsplit
+
+from langgraph.runtime import Runtime
+from langgraph.types import Send
+
+from scanner import __version__
+from scanner.checks.copy import get_guidance
+from scanner.checks.registry import REGISTRY, static_check_ids
+from scanner.deps import ScanDeps
+from scanner.fetch.client import PoliteClient
+from scanner.fetch.robots import robots_from_resource
+from scanner.models import (
+    CheckResult,
+    Evidence,
+    FetchedResource,
+    PageSample,
+    PlatformInfo,
+    ScanContext,
+    ScanReport,
+    SiteBasics,
+)
+from scanner.sampling.sitemap import collect_sitemaps
+from scanner.state import RunCheckInput, ScanState
+
+Update = dict[str, Any]
+
+
+def normalise(url: str) -> str:
+    """Return the origin (scheme://host[:port]) for a user-supplied shop URL."""
+    raw = url.strip()
+    if "://" not in raw:
+        raw = "https://" + raw
+    parts = urlsplit(raw)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError(f"not a valid http(s) URL: {url!r}")
+    host = parts.hostname.lower()
+    port = f":{parts.port}" if parts.port else ""
+    return f"{parts.scheme}://{host}{port}"
+
+
+async def normalise_url(state: ScanState) -> Update:
+    # Redirect resolution + final origin happen in fetch_basics once the fetch layer exists.
+    return {"origin": normalise(state["url"])}
+
+
+async def fetch_basics(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
+    """robots.txt -> home (resolves redirects) -> robots.txt of final host if it changed
+    -> sitemaps -> /.well-known/ucp. Robots is registered first so later fetches respect it."""
+    client = runtime.context.client
+    origin = state["origin"]
+
+    robots_res = await _fetch_robots(client, origin)
+    home = await client.get(origin + "/")
+    final_url = home.final_url or origin + "/"
+    final_origin = normalise(final_url)
+    if final_origin != origin:
+        robots_res = await _fetch_robots(client, final_origin)
+
+    robots = robots_from_resource(robots_res)
+    sitemap = await collect_sitemaps(client, final_origin, robots.sitemaps if robots else [])
+    ucp = await client.get(final_origin + "/.well-known/ucp")
+
+    return {
+        "origin": final_origin,
+        "basics": SiteBasics(
+            final_url=final_url,
+            origin=final_origin,
+            https=final_origin.startswith("https://"),
+            home=home,
+            robots=robots_res,
+            sitemap=sitemap,
+            ucp=ucp,
+        ),
+    }
+
+
+async def _fetch_robots(client: PoliteClient, origin: str) -> FetchedResource:
+    res = await client.get(origin + "/robots.txt", respect_robots=False)
+    robots = robots_from_resource(res)
+    host = urlsplit(origin).hostname or ""
+    # Network error -> no robots registered: we cannot tell, and the home fetch will
+    # most likely fail the same way.
+    if robots is not None:
+        client.set_robots(host, robots)
+    return res
+
+
+async def fingerprint_platform(state: ScanState) -> Update:
+    # STUB: will detect platform from headers / generator meta / asset paths.
+    return {"platform": PlatformInfo()}
+
+
+async def sample_pages(state: ScanState) -> Update:
+    # STUB: will pick product / category / policy pages (sitemap -> link-crawl fallback).
+    return {"pages": PageSample()}
+
+
+def fan_out_checks(state: ScanState) -> list[Send] | str:
+    """Conditional edge: one Send per enabled static check."""
+    ids = static_check_ids(state["options"].checks)
+    if not ids:
+        return "checkout_probe"
+    ctx = ScanContext(
+        origin=state["origin"],
+        options=state["options"],
+        basics=state["basics"],
+        platform=state["platform"],
+        pages=state["pages"],
+    )
+    return [Send("run_check", RunCheckInput(check_id=i, ctx=ctx)) for i in ids]
+
+
+async def run_check(state: RunCheckInput) -> Update:
+    """Run one check. Any exception becomes status="error" and never aborts the graph."""
+    spec = REGISTRY[state["check_id"]]
+    ctx = state["ctx"]
+    try:
+        assert spec.func is not None
+        result = await spec.func(ctx)
+    except Exception as exc:  # deliberate catch-all: isolate check failures
+        result = CheckResult(
+            id=spec.id,
+            category=spec.category,
+            label=spec.label,
+            status="error",
+            weight=spec.weight,
+            score_fraction=0.0,
+            evidence=[Evidence(url=ctx.origin, detail=f"{type(exc).__name__}: {exc}")],
+            guidance=get_guidance(spec.id, ctx.options.lang),
+            effort=spec.effort,
+        )
+    return {"results": [result]}
+
+
+async def checkout_probe(state: ScanState) -> Update:
+    # STUB (build step 2): Playwright probe producing C1-C5.
+    return {}
+
+
+def route_after_checkout(state: ScanState) -> str:
+    return "visibility" if state["options"].visibility else "score"
+
+
+async def visibility(state: ScanState) -> Update:
+    # STUB (build step 3): V1 subgraph — the only LLM-using code.
+    return {}
+
+
+async def score(state: ScanState) -> Update:
+    # STUB (build step 4): weighted, re-normalised score per SPEC.md section 5.
+    excluded = sum(r.status in ("not_applicable", "error") for r in state["results"])
+    return {"score": None, "excluded_checks": excluded}
+
+
+async def render_report(state: ScanState) -> Update:
+    # Builds the validated ScanReport; HTML rendering arrives in build step 4.
+    report = ScanReport(
+        scanner_version=__version__,
+        url=state["url"],
+        origin=state["origin"],
+        started_at=state["started_at"],
+        finished_at=datetime.now(UTC),
+        platform=state["platform"],
+        score=state.get("score"),
+        grade=None,
+        excluded_checks=state.get("excluded_checks", 0),
+        results=sorted(state["results"], key=lambda r: r.id),
+    )
+    return {"report": report}

@@ -1,0 +1,16 @@
+# Shopify-style default robots.txt (abridged, hand-written fixture)
+User-agent: *
+Disallow: /admin
+Disallow: /cart
+Disallow: /orders
+Disallow: /checkouts/
+Disallow: /checkout
+Disallow: /*/checkouts
+Disallow: /collections/*sort_by*
+Disallow: /*?*oseid=*
+Disallow: /search
+
+User-agent: adsbot-google
+Disallow: /checkouts/
+
+Sitemap: https://shop.example.nl/sitemap.xml
