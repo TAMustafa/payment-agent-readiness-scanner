@@ -55,9 +55,11 @@ class ScanOptions(BaseModel):
     # D5 manual input (never guessed): Merchant Center feed active + disapproval percentage
     merchant_center_active: bool | None = None
     merchant_center_disapproved_pct: float | None = Field(default=None, ge=0, le=100)
-    # Checkout probe (step 2). Consent = the merchant asked for this scan: only then may the
-    # probe enter cart/checkout paths that robots.txt disallows (decided 2026-11-08).
-    checkout: bool = True
+    # Checkout probe (step 2) is opt-in because it adds an item to an anonymous cart:
+    # `checkout` = operator has permission to test this shop (robots.txt still respected);
+    # `checkout_consent` = the merchant asked for this scan: implies `checkout` and may enter
+    # cart/checkout paths that robots.txt disallows (decided 2026-11-08).
+    checkout: bool = False
     checkout_consent: bool = False
     artifacts_dir: str | None = None  # screenshots go here (only when --out is given)
 

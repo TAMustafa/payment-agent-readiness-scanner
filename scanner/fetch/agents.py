@@ -5,7 +5,8 @@ Politeness:
   the sampler keeps free;
 - separate small probe budget, same 1 req/s per-host limit;
 - a bot that robots.txt disallows on that page is NOT impersonated (D1 reports it);
-- training-only bots are not probed (D2 is about search/agent access).
+- training-only bots are not probed (D2 is about search/agent access);
+- transparent: each request carries the bot's UA *and* our own identity (test_user_agent).
 """
 
 from __future__ import annotations
@@ -26,6 +27,13 @@ def detect_cdn(res: FetchedResource) -> str | None:
     if "akamai" in h.get("server", "") or any(k.startswith("x-akamai") for k in h):
         return "Akamai"
     return None
+
+
+def test_user_agent(bot_ua: str, our_ua: str) -> str:
+    """The bot's published UA plus our own identity: UA-based firewall rules still match
+    the bot name, but the request openly says it is a test by our scanner, so we never
+    misrepresent ourselves as the vendor's bot (residual risk closed 2026-11-08)."""
+    return f"{bot_ua} (AI-access test by {our_ua})"
 
 
 async def probe_agents(client: PoliteClient, basics: SiteBasics) -> AgentProbes:
@@ -59,7 +67,9 @@ async def probe_agents(client: PoliteClient, basics: SiteBasics) -> AgentProbes:
                 )
             )
             continue
-        res = await client.get(url, user_agent=bot.user_agent, probe=True)
+        res = await client.get(
+            url, user_agent=test_user_agent(bot.user_agent, client.user_agent), probe=True
+        )
         v = classify(res)
         out.probes.append(
             UaProbe(

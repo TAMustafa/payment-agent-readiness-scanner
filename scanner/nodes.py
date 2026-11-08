@@ -114,7 +114,7 @@ async def sample_pages(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
         state["platform"],
         max_products=opts.max_products,
         max_categories=opts.max_categories,
-        checkout_probe=opts.checkout,
+        checkout_probe=opts.checkout or opts.checkout_consent,
     )
     return {"pages": pages}
 
@@ -181,10 +181,19 @@ async def checkout_probe(state: ScanState, runtime: Runtime[ScanDeps]) -> Update
     the checks stay pure functions over collected data."""
     opts = state["options"]
     wanted = {i.split(".", 1)[0] for i in static_check_ids(opts.checks)}
-    if not opts.checkout or not ({"C1", "C2", "C3", "C4", "D4"} & wanted):
+    if not (opts.checkout or opts.checkout_consent):
+        # Opt-in: the probe adds an item to an anonymous cart (decided 2026-11-08).
         return {
             "checkout": CheckoutProbe(
-                skipped_kind="disabled", skipped_reason="checkout probe disabled"
+                skipped_kind="disabled",
+                skipped_reason="checkout probe not enabled (opt-in: --checkout when you have "
+                "permission to test this shop, --checkout-consent when the merchant asked)",
+            )
+        }
+    if not ({"C1", "C2", "C3", "C4", "D4"} & wanted):
+        return {
+            "checkout": CheckoutProbe(
+                skipped_kind="disabled", skipped_reason="no checkout checks selected"
             )
         }
     probe = await run_probe(

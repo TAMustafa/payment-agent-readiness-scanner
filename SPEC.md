@@ -88,6 +88,9 @@ If the probe cannot reach checkout for a technical reason → `error`, not `fail
 - The probe runs before the check fan-out, so C-checks are plain functions over its data.
 - C3: privacy pages are not a source (they list processors); `fail` only when the checkout
   page itself was seen without iDEAL/Wero, otherwise `warn`.
+- The probe is **opt-in** (`--checkout`, or `--checkout-consent` for merchant-requested
+  scans); default scans report C1, C2 and C4 as "not tested".
+- D2 test requests carry the bot's User-Agent plus our own identity (no impersonation).
 
 ### Category P — Agent protocols (10)
 | ID | Check | Weight | Criteria |

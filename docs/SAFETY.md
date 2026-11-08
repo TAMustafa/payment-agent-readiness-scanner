@@ -41,13 +41,22 @@ submitted, Mollie contacted, one-page "Bestellen" clicked); with the guards on, 
   evidence is limited to URLs, short snippets, headers and status codes.
 - No paid or LLM APIs are called yet (V1 is build step 3, behind `--visibility`).
 
-## Residual risks to be aware of
-- **D2 sends the published User-Agent strings of AI bots** (9 requests to the home page)
-  to see whether a CDN blocks them. A bot that robots.txt disallows is not impersonated.
-  Some sites' terms forbid misrepresenting the client; keep this check, but mention it in
-  the methodology section of the report.
-- **The probe adds one item to an anonymous cart** on shops whose robots.txt allows it. That
-  creates a short-lived cart session at the shop (no order, no data). Run live probes only
-  on shops you are allowed to test (reference shops: approved once each, 2026-11-08).
-- Label and path patterns are Dutch/English heuristics. New wording on a shop could be
-  missed by the click filter; the network guard is the backstop for that.
+## Formerly residual risks — closed 2026-11-08
+- **D2 no longer impersonates bots.** Each of the 9 home-page requests carries the bot's
+  published User-Agent *plus* our own identity, e.g.
+  `…OAI-SearchBot/1.4… (AI-access test by AgentReadyScanner/0.1.0 (+contact))`.
+  UA-based firewall rules still match the bot name, but the request openly says it is our
+  test. Bots that robots.txt disallows are not tested at all.
+  Proven by `tests/test_check_d2.py::test_d2_requests_are_transparent_never_pure_bot_impersonation`.
+- **The cart/checkout probe is opt-in.** Default scans never touch a cart: C1, C2 and C4 report
+  "not tested". Enable with `--checkout` only for shops you have permission to test
+  (robots.txt still respected), or `--checkout-consent` when the merchant asked for the scan
+  (also lifts robots.txt for cart/checkout). Proven by
+  `tests/test_safety.py::test_checkout_probe_is_opt_in`.
+- **Contact URL.** The CLI warns on every scan while `SCANNER_CONTACT_URL` is not set.
+
+## Remaining limits (not risks to the shop)
+- Label and path patterns are Dutch/English heuristics; new wording could be missed by the
+  click filter. The network guard (payment hosts, order paths, non-GET) is the backstop.
+- CDNs that verify bots by IP may treat the real bots differently from our test requests;
+  D2 reports this caveat with every result.

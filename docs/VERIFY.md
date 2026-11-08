@@ -116,3 +116,10 @@ policy page).
 **Not verified:** live probe on fixje (WooCommerce) and jhparts (Lightspeed); C4 only sees the
 first checkout step (HEMA's is a login/guest drawer), a captcha on a later step is not seen;
 add-to-cart detection is text-based (NL/EN button labels) and may miss icon-only buttons.
+
+### 2026-11-08 — Residual risks closed
+- D2 user agents made transparent (bot UA + "AI-access test by AgentReadyScanner/…"); live
+  re-check on hema.nl: D2 still `pass`, baseline 200, 9 probes 200.
+- Checkout probe made opt-in; default scan of hema.nl reports C1 "not tested: checkout probe
+  not enabled". CLI warns while `SCANNER_CONTACT_URL` is unset.
+- 206 tests pass (incl. new tests for both changes).

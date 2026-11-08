@@ -20,9 +20,10 @@ from scanner.models import CheckResult, Evidence, ScanContext
 
 CHECK_ID = "D2.edge_blocking"
 CAVEAT = (
-    "Method: the page was requested once per bot with that bot's published User-Agent, "
-    "from our own IP. CDNs that verify bots by IP (e.g. Cloudflare verified bots) may treat "
-    "the real bots differently."
+    "Method: the home page was requested once per bot with a User-Agent containing that "
+    "bot's published name plus our own scanner identity (we never pose as the bot), from "
+    "our own IP. CDNs that verify bots by IP (e.g. Cloudflare verified bots) may treat the "
+    "real bots differently."
 )
 
 

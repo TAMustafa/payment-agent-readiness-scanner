@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -44,8 +45,13 @@ def scan(
         typer.Option("--gmc-disapproved-pct", help="D5 manual input: % products disapproved"),
     ] = None,
     checkout: Annotated[
-        bool, typer.Option("--checkout/--no-checkout", help="Run the headless checkout probe")
-    ] = True,
+        bool,
+        typer.Option(
+            "--checkout",
+            help="Run the headless cart/checkout probe (adds 1 item to an anonymous cart). "
+            "Only for shops you have permission to test. robots.txt is still respected.",
+        ),
+    ] = False,
     checkout_consent: Annotated[
         bool,
         typer.Option(
@@ -56,6 +62,12 @@ def scan(
     ] = False,
 ) -> None:
     """Scan a shop and print or save the report."""
+    if os.environ.get("SCANNER_CONTACT_URL") is None:
+        typer.echo(
+            "Warning: SCANNER_CONTACT_URL is not set; shops see a placeholder contact URL in "
+            "our User-Agent. Set it (see .env.example) before scanning real shops.",
+            err=True,
+        )
     started = datetime.now(UTC)
     artifacts: Path | None = None
     if out is not None:
@@ -67,7 +79,7 @@ def scan(
         timeout_s=timeout,
         merchant_center_active=gmc_active,
         merchant_center_disapproved_pct=gmc_disapproved_pct,
-        checkout=checkout,
+        checkout=checkout or checkout_consent,
         checkout_consent=checkout_consent,
         artifacts_dir=str(artifacts) if artifacts else None,
     )

@@ -206,3 +206,20 @@ async def test_one_page_checkout_bestellen_button_is_never_clicked() -> None:
     assert ("POST", f"{ORIGIN}/order") not in shop.seen
     assert any("already is the checkout; not clicking" in s.detail for s in p.steps)
     assert p.checkout_reached and "iDEAL" in p.payment_methods
+
+
+async def test_checkout_probe_is_opt_in() -> None:
+    from scanner.graph import run_scan
+    from scanner.models import ScanOptions
+    from tests.conftest import FakeShop
+
+    report = await run_scan(
+        "example.nl",
+        ScanOptions(checks=["C1", "C2"]),
+        transport=FakeShop().transport,
+        min_interval_s=0,
+    )
+    for r in report.results:
+        assert r.status == "not_applicable"
+        assert "checkout probe not enabled" in r.evidence[0].detail
+    assert ScanOptions().checkout is False and ScanOptions().checkout_consent is False

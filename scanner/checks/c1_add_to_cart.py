@@ -22,7 +22,7 @@ async def check(ctx: ScanContext) -> CheckResult:
             ctx,
             "not_applicable",
             0.0,
-            [Evidence(detail="Checkout probe disabled for this scan")],
+            [Evidence(detail=f"Not tested: {p.skipped_reason or 'checkout probe disabled'}")],
         )
     if p.challenge and not p.added_to_cart:
         return result(

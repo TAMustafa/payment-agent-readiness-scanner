@@ -173,3 +173,14 @@ async def test_retry_after_is_honoured(make_shop: Callable[..., FakeShop]) -> No
         t0 = time.monotonic()
         await c.get(f"{ORIGIN}/b")
     assert time.monotonic() - t0 >= 0.95
+
+
+async def test_d2_requests_are_transparent_never_pure_bot_impersonation() -> None:
+    shop = UaShop(blocked_ua=())
+    await scan(shop)
+    home_uas = [q.headers["user-agent"] for q in shop.requests if q.url.path == "/"]
+    probe_uas = [ua for ua in home_uas if not ua.startswith("AgentReadyScanner/")]
+    assert len(home_uas) == 10 and len(probe_uas) == 9  # 1 baseline (ours) + 9 bot tests
+    for ua in probe_uas:
+        assert "(AI-access test by AgentReadyScanner/" in ua  # our identity always included
+    assert any("OAI-SearchBot" in ua for ua in probe_uas)  # bot name kept for UA rules

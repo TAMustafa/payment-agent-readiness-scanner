@@ -27,7 +27,7 @@ def not_run(check_id: str, ctx: ScanContext) -> CheckResult | None:
             ctx,
             "not_applicable",
             0.0,
-            [Evidence(detail="Checkout probe disabled for this scan")],
+            [Evidence(detail=f"Not tested: {p.skipped_reason or 'checkout probe disabled'}")],
         )
     if p.skipped_kind == "robots":
         return result(
