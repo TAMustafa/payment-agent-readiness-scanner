@@ -43,12 +43,14 @@ from scanner.sampling.urls import (
 
 DEFAULT_MAX_PRODUCTS = 8
 DEFAULT_MAX_CATEGORIES = 2
-POLICY_KINDS = ("shipping", "returns", "terms", "privacy")
+POLICY_KINDS = ("shipping", "returns", "terms", "privacy", "payment")  # payment: C3
 MAX_PROBES_FACTOR = 1.5  # unconfirmed candidates we may fetch per wanted product
 # Seconds of fetch time kept free for the policy pages while sampling products.
 POLICY_RESERVE_S = 10.0
-# Seconds kept free after sampling for the D2 user-agent probes (9 requests at >= 1 s).
+# Seconds kept free after sampling: D2 user-agent probes (9 requests at >= 1 s), plus the
+# headless checkout probe (~4 paced navigations) when it is enabled.
 PROBE_RESERVE_S = 15.0
+CHECKOUT_RESERVE_S = 30.0
 
 
 def spread(items: list[str], n: int) -> list[str]:
@@ -80,6 +82,7 @@ class _Run:
     out: PageSample = field(default_factory=PageSample)
     tile_links: list[str] = field(default_factory=list)  # product tiles on category pages
     policies_done: bool = False
+    reserve_s: float = PROBE_RESERVE_S
 
     def budget(self) -> int:
         return self.client.max_requests - self.client.requests_made
@@ -92,7 +95,7 @@ class _Run:
         return self.client.stopped_for_time or self.client.reserve_hit
 
     async def get(self, url: str, *, extra_reserve_s: float = 0.0) -> FetchedResource:
-        return await self.client.get(url, reserve_s=PROBE_RESERVE_S + extra_reserve_s)
+        return await self.client.get(url, reserve_s=self.reserve_s + extra_reserve_s)
 
     def note(self, detail: str, url: str | None = None) -> None:
         self.out.notes.append(Evidence(url=url, detail=detail))
@@ -208,6 +211,7 @@ async def sample(
     *,
     max_products: int = DEFAULT_MAX_PRODUCTS,
     max_categories: int = DEFAULT_MAX_CATEGORIES,
+    checkout_probe: bool = False,
 ) -> PageSample:
     origin = basics.origin
     host = urlsplit(origin).hostname
@@ -234,6 +238,7 @@ async def sample(
         home_links=home_links,
         entries=[e for e in basics.sitemap.entries if urlsplit(e.loc).hostname == host],
         policy_urls=policy_urls,
+        reserve_s=PROBE_RESERVE_S + (CHECKOUT_RESERVE_S if checkout_probe else 0.0),
     )
     # Shopify product sitemaps list the home page first: never a product candidate.
     roots = {origin, origin + "/"}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlsplit
@@ -42,14 +43,33 @@ def scan(
         float | None,
         typer.Option("--gmc-disapproved-pct", help="D5 manual input: % products disapproved"),
     ] = None,
+    checkout: Annotated[
+        bool, typer.Option("--checkout/--no-checkout", help="Run the headless checkout probe")
+    ] = True,
+    checkout_consent: Annotated[
+        bool,
+        typer.Option(
+            "--checkout-consent",
+            help="The merchant asked for this scan: the probe may enter cart/checkout paths "
+            "that robots.txt disallows. Never use without the merchant's consent.",
+        ),
+    ] = False,
 ) -> None:
     """Scan a shop and print or save the report."""
+    started = datetime.now(UTC)
+    artifacts: Path | None = None
+    if out is not None:
+        host = urlsplit(url if "://" in url else "https://" + url).hostname or "unknown"
+        artifacts = out / host / started.strftime("%Y%m%dT%H%M%SZ")
     options = ScanOptions(
         checks=checks.split(",") if checks else None,
         visibility=visibility,
         timeout_s=timeout,
         merchant_center_active=gmc_active,
         merchant_center_disapproved_pct=gmc_disapproved_pct,
+        checkout=checkout,
+        checkout_consent=checkout_consent,
+        artifacts_dir=str(artifacts) if artifacts else None,
     )
     try:
         report = asyncio.run(asyncio.wait_for(run_scan(url, options), timeout=timeout))
@@ -60,8 +80,8 @@ def scan(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from None
 
-    if out is not None:
-        path = _write_report(report, out)
+    if artifacts is not None:
+        path = _write_report(report, artifacts)
         typer.echo(f"Wrote {path}", err=True)
     if as_json:
         typer.echo(report.model_dump_json(indent=2))
@@ -75,10 +95,7 @@ def graph() -> None:
     typer.echo(build_graph().get_graph().draw_mermaid())
 
 
-def _write_report(report: ScanReport, out: Path) -> Path:
-    host = urlsplit(report.origin).hostname or "unknown"
-    ts = report.started_at.strftime("%Y%m%dT%H%M%SZ")
-    target = out / host / ts
+def _write_report(report: ScanReport, target: Path) -> Path:
     target.mkdir(parents=True, exist_ok=True)
     path = target / "report.json"
     path.write_text(report.model_dump_json(indent=2), encoding="utf-8")

@@ -1,8 +1,8 @@
 """Check registry: maps stable SPEC.md check id -> metadata (+ implementation).
 
 All catalogue IDs are listed here so weights can be validated (they must sum to 100).
-`func` is set only for checks that run in the parallel `run_check` fan-out (static checks).
-C* checks are produced by the checkout_probe node, V1 by the visibility node.
+`func` is set for checks that run in the parallel `run_check` fan-out. C-checks read the
+data the checkout_probe node collected; V1 is produced by the visibility node.
 
 Effort values are NOT in SPEC.md — they are initial estimates and need confirming.
 """
@@ -13,6 +13,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from scanner.checks import (
+    c1_add_to_cart,
+    c2_guest_checkout,
+    c3_payment_methods,
+    c4_captcha_checkout,
+    c5_policies,
     d1_robots,
     d2_edge,
     d3_sitemap,
@@ -98,12 +103,32 @@ _SPECS: list[CheckSpec] = [
         "S",
         s6_organization.check,
     ),
-    # C — Checkout readiness (20) — produced by checkout_probe (step 2)
-    CheckSpec("C1.add_to_cart", "checkout", "Add to cart works headless", 5, "M"),
-    CheckSpec("C2.guest_checkout", "checkout", "Guest checkout available", 6, "M"),
-    CheckSpec("C3.payment_methods", "checkout", "iDEAL / Wero offered", 4, "S"),
-    CheckSpec("C4.captcha_checkout", "checkout", "No captcha on checkout entry", 3, "M"),
-    CheckSpec("C5.policies_clear", "checkout", "Shipping and returns stated clearly", 2, "S"),
+    # C — Checkout readiness (20) — data from the checkout_probe node (step 2)
+    CheckSpec(
+        "C1.add_to_cart", "checkout", "Add to cart works headless", 5, "M", c1_add_to_cart.check
+    ),
+    CheckSpec(
+        "C2.guest_checkout", "checkout", "Guest checkout available", 6, "M", c2_guest_checkout.check
+    ),
+    CheckSpec(
+        "C3.payment_methods", "checkout", "iDEAL / Wero offered", 4, "S", c3_payment_methods.check
+    ),
+    CheckSpec(
+        "C4.captcha_checkout",
+        "checkout",
+        "No captcha on checkout entry",
+        3,
+        "M",
+        c4_captcha_checkout.check,
+    ),
+    CheckSpec(
+        "C5.policies_clear",
+        "checkout",
+        "Shipping and returns stated clearly",
+        2,
+        "S",
+        c5_policies.check,
+    ),
     # P — Agent protocols (10)
     CheckSpec(
         "P1.ucp_profile", "protocol", "UCP profile at /.well-known/ucp", 5, "L", p1_ucp.check

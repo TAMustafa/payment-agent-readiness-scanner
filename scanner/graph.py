@@ -2,8 +2,8 @@
 
 START -> normalise_url -> fetch_basics -> fetch_agent_endpoints (UCP, ai-catalog, llms.txt)
       -> fingerprint_platform -> sample_pages -> probe_user_agents (D2 data)
-      -> [Send fan-out] run_check -> checkout_probe -> (visibility?) -> score
-      -> render_report -> END
+      -> checkout_probe (Playwright, C1-C4) -> [Send fan-out] run_check -> (visibility?)
+      -> score -> render_report -> END
 
 API reference (LangGraph 1.2): https://docs.langchain.com/oss/python/langgraph/graph-api
 (Send for map-reduce, add_node(..., retry_policy=RetryPolicy(...))).
@@ -11,7 +11,9 @@ API reference (LangGraph 1.2): https://docs.langchain.com/oss/python/langgraph/g
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 from langgraph.graph import END, START, StateGraph
@@ -54,11 +56,11 @@ def build_graph() -> CompiledStateGraph[ScanState, ScanDeps, ScanState, ScanStat
     # free (PROBE_RESERVE_S), so they cannot be starved either.
     g.add_edge("fingerprint_platform", "sample_pages")
     g.add_edge("sample_pages", "probe_user_agents")
+    g.add_edge("probe_user_agents", "checkout_probe")
     g.add_conditional_edges(
-        "probe_user_agents", nodes.fan_out_checks, ["run_check", "checkout_probe"]
+        "checkout_probe", nodes.fan_out_checks, ["run_check", "visibility", "score"]
     )
-    g.add_edge("run_check", "checkout_probe")
-    g.add_conditional_edges("checkout_probe", nodes.route_after_checkout, ["visibility", "score"])
+    g.add_conditional_edges("run_check", nodes.route_after_checks, ["visibility", "score"])
     g.add_edge("visibility", "score")
     g.add_edge("score", "render_report")
     g.add_edge("render_report", END)
@@ -72,6 +74,7 @@ async def run_scan(
     *,
     transport: httpx.AsyncBaseTransport | None = None,
     min_interval_s: float = 1.0,
+    browser_route_hook: Callable[[Any], Awaitable[None]] | None = None,
 ) -> ScanReport:
     opts = options or ScanOptions()
     graph = build_graph()
@@ -87,6 +90,7 @@ async def run_scan(
         transport=transport,
         time_budget_s=max(opts.timeout_s - RESERVE_S, 1.0),
     ) as client:
-        final = await graph.ainvoke(initial, context=ScanDeps(client=client))
+        deps = ScanDeps(client=client, browser_route_hook=browser_route_hook)
+        final = await graph.ainvoke(initial, context=deps)
     report: ScanReport = final["report"]
     return report

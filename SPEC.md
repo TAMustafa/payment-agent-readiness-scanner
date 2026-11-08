@@ -76,6 +76,19 @@ open checkout. STOP before entering any personal data. Never click pay/order but
 | C5.policies_clear | Shipping cost/time and return window stated in plain text on policy pages | 2 | Regex for days/costs in NL + EN |
 If the probe cannot reach checkout for a technical reason → `error`, not `fail`.
 
+*Probe decisions (Tarek, 2026-11-08):*
+- robots.txt is respected for every probe navigation and for the likely checkout destination
+  before clicking "checkout". If disallowed, C1–C4 are `not_applicable` ("not tested").
+  `--checkout-consent` lifts this only for scans the merchant asked for.
+- Page loads: images, fonts, media and known trackers are blocked; >= 1 s between
+  navigations via the shared per-host limiter (incl. Retry-After); each navigation counts
+  against the page budget.
+- Cookie banners: click reject / "alleen noodzakelijk" first; only if absent, accept (counted
+  as one interstitial).
+- The probe runs before the check fan-out, so C-checks are plain functions over its data.
+- C3: privacy pages are not a source (they list processors); `fail` only when the checkout
+  page itself was seen without iDEAL/Wero, otherwise `warn`.
+
 ### Category P — Agent protocols (10)
 | ID | Check | Weight | Criteria |
 |---|---|---|---|

@@ -9,6 +9,7 @@ from typing import Annotated, NotRequired, TypedDict
 from scanner.models import (
     AgentEndpoints,
     AgentProbes,
+    CheckoutProbe,
     CheckResult,
     PageSample,
     PlatformInfo,
@@ -31,6 +32,7 @@ class ScanState(TypedDict):
     pages: NotRequired[PageSample]
     agent_probes: NotRequired[AgentProbes]
     endpoints: NotRequired[AgentEndpoints]
+    checkout: NotRequired[CheckoutProbe]
     # parallel check results are merged by list concatenation
     results: Annotated[list[CheckResult], operator.add]
     score: NotRequired[float | None]

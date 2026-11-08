@@ -7,6 +7,7 @@ They will delegate to scanner.fetch / sampling / platform / report as those are 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -14,6 +15,7 @@ from langgraph.runtime import Runtime
 from langgraph.types import Send
 
 from scanner import __version__
+from scanner.checkout.probe import run_probe
 from scanner.checks.copy import get_guidance
 from scanner.checks.registry import REGISTRY, static_check_ids
 from scanner.deps import ScanDeps
@@ -22,6 +24,7 @@ from scanner.fetch.client import PoliteClient
 from scanner.fetch.robots import robots_from_resource
 from scanner.models import (
     AgentEndpoints,
+    CheckoutProbe,
     CheckResult,
     Evidence,
     FetchedResource,
@@ -111,6 +114,7 @@ async def sample_pages(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
         state["platform"],
         max_products=opts.max_products,
         max_categories=opts.max_categories,
+        checkout_probe=opts.checkout,
     )
     return {"pages": pages}
 
@@ -136,7 +140,7 @@ def fan_out_checks(state: ScanState) -> list[Send] | str:
     """Conditional edge: one Send per enabled static check."""
     ids = static_check_ids(state["options"].checks)
     if not ids:
-        return "checkout_probe"
+        return route_after_checks(state)
     ctx = ScanContext(
         origin=state["origin"],
         options=state["options"],
@@ -145,6 +149,7 @@ def fan_out_checks(state: ScanState) -> list[Send] | str:
         pages=state["pages"],
         agent_probes=state["agent_probes"],
         endpoints=state["endpoints"],
+        checkout=state.get("checkout", CheckoutProbe(skipped_kind="disabled")),
     )
     return [Send("run_check", RunCheckInput(check_id=i, ctx=ctx)) for i in ids]
 
@@ -171,12 +176,30 @@ async def run_check(state: RunCheckInput) -> Update:
     return {"results": [result]}
 
 
-async def checkout_probe(state: ScanState) -> Update:
-    # STUB (build step 2): Playwright probe producing C1-C5.
-    return {}
+async def checkout_probe(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
+    """Playwright probe (C1-C4, part of C3, D4 render). Runs before the check fan-out so
+    the checks stay pure functions over collected data."""
+    opts = state["options"]
+    wanted = {i.split(".", 1)[0] for i in static_check_ids(opts.checks)}
+    if not opts.checkout or not ({"C1", "C2", "C3", "C4", "D4"} & wanted):
+        return {
+            "checkout": CheckoutProbe(
+                skipped_kind="disabled", skipped_reason="checkout probe disabled"
+            )
+        }
+    probe = await run_probe(
+        runtime.context.client,
+        state["origin"],
+        state["platform"].platform,
+        state["pages"],
+        consent=opts.checkout_consent,
+        artifacts=Path(opts.artifacts_dir) if opts.artifacts_dir else None,
+        route_hook=runtime.context.browser_route_hook,
+    )
+    return {"checkout": probe}
 
 
-def route_after_checkout(state: ScanState) -> str:
+def route_after_checks(state: ScanState) -> str:
     return "visibility" if state["options"].visibility else "score"
 
 

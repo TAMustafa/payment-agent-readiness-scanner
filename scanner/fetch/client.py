@@ -170,6 +170,45 @@ class PoliteClient:
     def _host_lock(self, host: str) -> asyncio.Lock:
         return self._host_locks.setdefault(host, asyncio.Lock())
 
+    def robots_allows(self, url: str) -> bool:
+        robots = self._robots.get((urlsplit(url).hostname or "").lower())
+        return robots is None or robots.is_allowed(ROBOTS_TOKEN, url)
+
+    def take_navigation(self) -> bool:
+        """Count a browser navigation against the page budget. False = budget spent."""
+        if self.requests_made >= self.max_requests:
+            return False
+        self.requests_made += 1
+        return True
+
+    async def pace(self, host: str, *, reserve_s: float = 0.0) -> bool:
+        """Wait our turn for `host` (interval + Retry-After), as for a normal request.
+
+        For browser navigations. Returns False if the wait would cross the deadline.
+        """
+        host = host.lower()
+        async with self._host_lock(host):
+            if self._deadline is not None:
+                finish = time.monotonic() + self._pending_wait(host) + self._timeout_s
+                if finish > self._deadline - reserve_s:
+                    self.stopped_for_time = True
+                    return False
+            await self._wait_turn(host)
+            self._host_last[host] = time.monotonic()
+        return True
+
+    def note_status(self, host: str, status: int, retry_after: str | None) -> None:
+        """Feed a browser navigation's status into the same 429 backoff."""
+        if status != 429:
+            return
+        host = host.lower()
+        self.rate_limited[host] = self.rate_limited.get(host, 0) + 1
+        ra = _retry_after_s(retry_after)
+        if ra:
+            self._host_not_before[host] = time.monotonic() + ra
+        current = self._host_interval.get(host, self.min_interval_s)
+        self._host_interval[host] = min(max(current * 2, self.min_interval_s * 2), MAX_BACKOFF_S)
+
     def time_left(self) -> float:
         """Seconds until the fetch deadline (inf when no time budget is set)."""
         if self._deadline is None:

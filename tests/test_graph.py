@@ -35,7 +35,8 @@ def test_category_weights_match_spec() -> None:
 
 def test_static_check_filter_by_prefix() -> None:
     assert static_check_ids(["D1", "S2.offer"]) == ["D1.robots_ai_crawlers", "S2.offer"]
-    assert "C1.add_to_cart" not in static_check_ids()  # produced by checkout_probe
+    assert "C1.add_to_cart" in static_check_ids()  # reads checkout_probe data
+    assert "V1.prompt_visibility" not in static_check_ids()  # produced by visibility node
     assert static_check_ids(["S"]) == [i for i in static_check_ids() if i.startswith("S")]
 
 
@@ -75,7 +76,7 @@ async def test_offline_scan_runs_every_static_check() -> None:
     report = await offline_scan()
     assert report.origin == "https://example.nl"
     assert [r.id for r in report.results] == sorted(static_check_ids())
-    assert len(report.results) == 14  # D1-D5, S1-S6, P1-P3 (C* and V1 come from other nodes)
+    assert len(report.results) == 19  # D1-D5, S1-S6, P1-P3, C1-C5 (V1: visibility node)
     for r in report.results:
         assert r.evidence, r.id  # no result without evidence (CLAUDE.md rule 4)
         assert "Traceback" not in r.evidence[0].detail, r.id

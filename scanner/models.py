@@ -55,6 +55,11 @@ class ScanOptions(BaseModel):
     # D5 manual input (never guessed): Merchant Center feed active + disapproval percentage
     merchant_center_active: bool | None = None
     merchant_center_disapproved_pct: float | None = Field(default=None, ge=0, le=100)
+    # Checkout probe (step 2). Consent = the merchant asked for this scan: only then may the
+    # probe enter cart/checkout paths that robots.txt disallows (decided 2026-11-08).
+    checkout: bool = True
+    checkout_consent: bool = False
+    artifacts_dir: str | None = None  # screenshots go here (only when --out is given)
 
 
 # --- Fetched data (lives in state so checks never refetch) -----------------------------
@@ -148,6 +153,45 @@ class AgentProbes(BaseModel):
     probes: list[UaProbe] = Field(default_factory=list)
 
 
+class ProbeStep(BaseModel):
+    name: str  # "product" | "cookie_banner" | "popup" | "add_to_cart" | "cart" | "checkout"
+    url: str | None = None
+    outcome: Literal["ok", "blocked", "skipped", "failed"]
+    detail: str
+    screenshot: str | None = None  # file name inside the scan's artifacts dir
+
+
+class RenderedPage(BaseModel):
+    """What a JS-rendering browser sees on a product page (for D4)."""
+
+    url: str
+    price_visible: bool
+    stock_visible: bool
+
+
+class CheckoutProbe(BaseModel):
+    """Data collected by the Playwright checkout probe (C1-C4, part of C3, D4 render).
+
+    Read-only by design: stops on the checkout page, never types, never pays.
+    """
+
+    ran: bool = False
+    skipped_reason: str | None = None  # robots / no products / browser missing / disabled
+    skipped_kind: Literal["robots", "technical", "disabled"] | None = None
+    product_url: str | None = None
+    steps: list[ProbeStep] = Field(default_factory=list)
+    interstitials: list[str] = Field(default_factory=list)  # cookie banner counted once
+    challenge: str | None = None  # bot challenge / captcha met before checkout
+    added_to_cart: bool | None = None
+    checkout_url: str | None = None
+    checkout_reached: bool = False
+    login_wall: bool | None = None
+    guest_option: bool | None = None
+    captcha_markers: list[str] = Field(default_factory=list)  # on checkout entry
+    payment_methods: dict[str, str] = Field(default_factory=dict)  # method -> URL seen
+    rendered: list[RenderedPage] = Field(default_factory=list)
+
+
 class ScanContext(BaseModel):
     """Everything a check may read. Built once after sampling; checks never fetch."""
 
@@ -158,6 +202,7 @@ class ScanContext(BaseModel):
     pages: PageSample
     agent_probes: AgentProbes = Field(default_factory=AgentProbes)
     endpoints: AgentEndpoints = Field(default_factory=AgentEndpoints)
+    checkout: CheckoutProbe = Field(default_factory=CheckoutProbe)
 
 
 # --- Output ----------------------------------------------------------------------------

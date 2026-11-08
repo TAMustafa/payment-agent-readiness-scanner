@@ -200,6 +200,64 @@ GUIDANCE: dict[str, dict[str, str]] = {
             "emerging standard, not yet a requirement."
         ),
     },
+    "C1.add_to_cart": {
+        "nl": (
+            "Een browser-agent kon niet (zonder hindernissen) een product in de winkelwagen "
+            "leggen. Zorg dat 'In winkelwagen' werkt zonder bot-uitdaging of captcha en beperk "
+            "pop-ups tot de cookiemelding. Agent-checkout is in Nederland nog niet live; dit "
+            "meet hoe klaar je gewone checkout is voor browser-agents."
+        ),
+        "en": (
+            "A browser agent could not add a product to the cart (without obstacles). Make "
+            "'Add to cart' work without bot challenges or captchas and keep pop-ups to the "
+            "cookie notice. Agent checkout is not live in the Netherlands yet; this measures "
+            "how ready your normal checkout is for browser agents."
+        ),
+    },
+    "C2.guest_checkout": {
+        "nl": (
+            "Bied afrekenen als gast aan. Een verplicht account blokkeert AI-agents die namens "
+            "een klant bestellen, en ook veel gewone klanten."
+        ),
+        "en": (
+            "Offer guest checkout. A mandatory account blocks AI agents ordering on behalf of "
+            "a customer, and many regular customers too."
+        ),
+    },
+    "C3.payment_methods": {
+        "nl": (
+            "Bied iDEAL (en straks Wero) aan en toon de betaalmethoden duidelijk op een "
+            "betaalinformatiepagina of in de footer, zodat agents en klanten ze vooraf zien."
+        ),
+        "en": (
+            "Offer iDEAL (and Wero as it rolls out) and show payment methods clearly on a "
+            "payment information page or in the footer, so agents and customers see them "
+            "up front."
+        ),
+    },
+    "C4.captcha_checkout": {
+        "nl": (
+            "Er staat een captcha bij het begin van de checkout. Die houdt ook legitieme "
+            "browser-agents tegen. Gebruik onzichtbare botbescherming of zet de captcha pas "
+            "bij verdacht gedrag in."
+        ),
+        "en": (
+            "There is a captcha at checkout entry. It also stops legitimate browser agents. "
+            "Use invisible bot protection or only show the captcha on suspicious behaviour."
+        ),
+    },
+    "C5.policies_clear": {
+        "nl": (
+            "Vermeld op je verzend- en retourpagina in gewone tekst de verzendkosten, de "
+            "levertijd (bijv. '1-2 werkdagen') en de retourtermijn (bijv. '30 dagen'), zodat "
+            "AI-assistenten deze vragen direct kunnen beantwoorden."
+        ),
+        "en": (
+            "State shipping cost, delivery time (e.g. '1-2 business days') and return window "
+            "(e.g. '30 days') in plain text on your shipping and returns pages, so AI "
+            "assistants can answer these questions directly."
+        ),
+    },
 }
 
 

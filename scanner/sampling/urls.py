@@ -30,6 +30,7 @@ POLICY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "returns": ("retour", "ruilen", "herroep", "return", "refund"),
     "terms": ("voorwaarden", "terms", "conditions"),
     "privacy": ("privacy",),
+    "payment": ("betaalmethode", "betaalmogelijkhed", "betaalwijze", "betalen", "payment"),
 }
 # Shopify's built-in policy pages (used only when no footer link was found).
 SHOPIFY_POLICY_PATHS: dict[str, str] = {

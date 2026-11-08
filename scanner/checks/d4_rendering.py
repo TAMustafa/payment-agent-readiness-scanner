@@ -3,8 +3,8 @@
 Many AI crawlers do not run JavaScript, so data that only appears after rendering is
 invisible to them. Per page: 1/3 each for name (markup name or <h1>), price (markup price
 or a visible price) and availability (markup availability or a NL/EN stock phrase).
-Static only for now: telling "only after JS" apart from "missing everywhere" needs the
-Playwright render comparison (build step 2). Both mean crawlers do not see the data.
+The checkout probe's Playwright render of the probed product page tells "only after JS"
+apart from "absent" for that page; other pages stay raw-HTML only.
 """
 
 from __future__ import annotations
@@ -40,10 +40,30 @@ def score(page: FetchedResource) -> PageScore:
     detail = (
         "name, price, availability in raw HTML"
         if not missing
-        else f"Not in raw HTML: {', '.join(missing)} (JS-only or absent; render check in step 2)"
+        else f"Not in raw HTML: {', '.join(missing)} (JS-only or absent)"
     )
     return PageScore(page.url, sum(have.values()) / 3, detail)
 
 
 async def check(ctx: ScanContext) -> CheckResult:
-    return score_pages(CHECK_ID, ctx, score)
+    rendered = {r.url: r for r in ctx.checkout.rendered}
+
+    def scored(page: FetchedResource) -> PageScore:
+        s = score(page)
+        r = rendered.get(page.url) or rendered.get(page.final_url or "")
+        if r is None or s.score >= 0.999:
+            return s
+        after = [k for k, v in (("price", r.price_visible), ("availability", r.stock_visible)) if v]
+        if after:
+            return PageScore(
+                s.url,
+                s.score,
+                s.detail.split(" (")[0]
+                + f"; after JavaScript rendering: {', '.join(after)} appear(s) "
+                "-> only visible to crawlers that run JavaScript",
+            )
+        return PageScore(
+            s.url, s.score, s.detail.split(" (")[0] + "; also absent after JavaScript rendering"
+        )
+
+    return score_pages(CHECK_ID, ctx, scored)

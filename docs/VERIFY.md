@@ -90,3 +90,29 @@ Fixes during this run: agent-endpoint files moved before sampling (Shopify Retry
 - S5 shop-rating detection needs ≥ 2 rated pages (fixje's single "9 from 100000" page not flagged).
 - P2 support table: Magento/Adobe sources could not be read; NL availability of any channel is not stated by vendors.
 - C1–C5 (checkout probe) and V1 (visibility) are build steps 2 and 3; scoring + HTML report are step 4.
+
+### 2026-11-08 — Build step 2: checkout probe (C1–C5) + D4 render comparison
+
+`uv run ruff check . && uv run mypy scanner && uv run pytest` → clean, 127 tests, incl. 7 that
+drive real headless Chromium against a fake shop served via Playwright routes (no network):
+happy path, login wall, captcha, bot challenge, robots-disallowed checkout (asserts `/checkout`
+is never requested), consent override, D4 "JS-only vs absent".
+
+Live probe runs (Tarek approved one run per shop whose robots.txt allows checkout):
+
+| Shop | Probe | C1 | C2 | C3 | C4 | C5 | Manual verification |
+|---|---|---|---|---|---|---|---|
+| hema.nl | ran | pass | pass | pass | pass | warn | Screenshots checked: cookie banner **rejected**; "in winkelmandje" clicked; cart shows 1 item €3,99; "bestellen" opens a drawer with "inloggen / **bestellen als gast** / account aanmaken" → C2 pass correct; probe stopped there, nothing typed. C5: delivery time ("Thuislevering: 1-3 werkdagen") is only in embedded Next.js FAQ data → now half credit with that explanation. |
+| fixje.nl | not run | error | error | warn | error | error | 0 products sampled this run (host rate-limited us after many test scans today) → probe skipped, honestly reported. **Live probe still to verify.** |
+| jhparts.nl | not run | error | error | warn | error | error | Cloudflare challenge on home/products → nothing sampled. **Live probe still to verify.** |
+| stoov / duifhuizen / dille-kamille | `--no-checkout` (robots disallows checkout; not approved) | n/a | n/a | warn / pass / warn | n/a | warn / pass / error | C3/C5 static only. |
+
+False results found and fixed: Klarna "shown" because a **privacy statement** lists it as a
+data processor (privacy pages excluded from C3); footer logos without iDEAL were a `fail`
+although checkout wasn't seen (now `warn`; `fail` only when the probe saw the checkout);
+"retourneren binnen 14 dagen" counted as a delivery time (C5 items now scoped to their own
+policy page).
+
+**Not verified:** live probe on fixje (WooCommerce) and jhparts (Lightspeed); C4 only sees the
+first checkout step (HEMA's is a login/guest drawer), a captcha on a later step is not seen;
+add-to-cart detection is text-based (NL/EN button labels) and may miss icon-only buttons.
