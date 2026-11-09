@@ -1,4 +1,4 @@
-# Safety guarantees (status 2026-11-08, build steps 1–2)
+# Safety guarantees (status 2026-11-09, build steps 1–3)
 
 What the scanner can and cannot do to a live shop, and how each point is enforced.
 Technical summary, not legal advice.
@@ -24,6 +24,22 @@ provider, and the scanner holds no credentials. The guards make sure no order is
 Mutation check (2026-11-08): with the guards disabled, 12 safety tests fail (order form
 submitted, Mollie contacted, one-page "Bestellen" clicked); with the guards on, all pass.
 
+## AI visibility (V1): no shop contact, hard spending caps
+
+| Guarantee | Enforced by | Proven by |
+|---|---|---|
+| V1 contacts **only openrouter.ai**, never a shop | client pinned to `https://openrouter.ai/api/v1`, `_check_host`; visibility package imports no crawler/browser code | `test_openrouter_client_is_pinned_to_openrouter`, `..._refuses_other_hosts`, `test_visibility_package_never_touches_shops` |
+| The only POST in the codebase is the OpenRouter chat call | documented allow-list in the AST scan (exactly one `.post("/chat/completions")`) | `test_no_code_types_submits_or_sends_non_get` |
+| Max USD 10 per month (≤ EUR 10, Tarek 2026-11-09); per scan ≤ USD 1.40 (typical 1.15) | (1) OpenRouter key limit, monthly reset → HTTP 402 stops all calls; (2) pre-run estimate vs. month-to-date = max(local ledger, OpenRouter `usage_monthly`); (3) before **every** paid call: spent + worst case vs. monthly **and** per-scan cap | `test_monthly_cap_uses_higher_of_ledger_and_openrouter`, `test_per_scan_cap_refuses_before_any_paid_call`, `test_per_scan_cap_is_hard_during_the_run`, `test_openrouter_402_stops_remaining_calls` |
+| Costs are booked exactly | ledger books OpenRouter's `usage.cost`, verified live (2026-11-09) to include the search fee and to equal `/generation` `total_cost` | `test_full_run_two_assistants_two_runs`, `docs/VERIFY.md` |
+| Caps hold with parallel calls | each call reserves its worst case (3 searches) before it starts; check + reserve atomic (fixes a live overshoot: USD 1.17 booked vs USD 1.00 cap) | `test_per_scan_cap_is_hard_during_the_run` |
+| No paid call without a key / by default | V1 only with `--visibility` and `OPENROUTER_API_KEY` | `test_no_key_means_no_requests`, `test_visibility_off_by_default` |
+| No provider training on our prompts | `provider.data_collection = "deny"` on every request | `test_full_run_two_assistants_two_runs` |
+| API keys never committed | `.env` gitignored; scan of all git-tracked files for key patterns | `test_no_api_keys_in_git_tracked_files` (added after a key was pasted into `.env.example` on 2026-11-09 — moved to `.env` before any commit) |
+
+Mutation check (2026-11-09): with the four budget guards disabled, 3 budget tests fail; with
+them on, all pass. Tests never make a paid call (fake OpenRouter via `httpx.MockTransport`).
+
 ## Politeness and access (CLAUDE.md rule 2)
 - Identifies as `AgentReadyScanner/<version> (+contact URL)`. **Set `SCANNER_CONTACT_URL`
   to a real page before scanning shops**; the default is a placeholder.
@@ -39,7 +55,8 @@ submitted, Mollie contacted, one-page "Bestellen" clicked); with the guards on, 
   platform detection). The browser session is discarded after the probe.
 - Nothing is typed, so screenshots and reports contain no personal data of ours; stored
   evidence is limited to URLs, short snippets, headers and status codes.
-- No paid or LLM APIs are called yet (V1 is build step 3, behind `--visibility`).
+- LLM calls only in V1 (`--visibility`), only to OpenRouter; questions contain only the shop's
+  public brand/category names — no page HTML, no personal data.
 
 ## Formerly residual risks — closed 2026-11-08
 - **D2 no longer impersonates bots.** Each of the 9 home-page requests carries the bot's

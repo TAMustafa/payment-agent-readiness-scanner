@@ -45,6 +45,7 @@ class CheckResult(BaseModel):
 class ScanOptions(BaseModel):
     checks: list[str] | None = None  # None = all enabled checks
     visibility: bool = False  # V1 costs money -> opt-in
+    visibility_prompts_file: str | None = None  # operator override: one question per line
     timeout_s: float = 120.0
     max_pages: int = 40
     # Small samples so rate-limiting shops (Shopify 429 + Retry-After 60) still yield data
@@ -210,6 +211,38 @@ class ScanContext(BaseModel):
 # --- Output ----------------------------------------------------------------------------
 
 
+class VisibilityCall(BaseModel):
+    """One question to one assistant in one run (V1). No shop data is sent anywhere."""
+
+    assistant: str
+    model: str
+    run: int
+    kind: Literal["brand", "category", "custom"]
+    prompt: str
+    mentioned: bool = False
+    mentioned_in_text: bool = False
+    cited: bool = False
+    position: int | None = None  # 1-based rank of the shop among distinct cited domains
+    cited_url: str | None = None  # first citation pointing at the shop
+    cited_domains: list[str] = Field(default_factory=list)
+    searches: int = 0
+    cost_usd: float = 0.0
+    generation_id: str | None = None
+    raw_path: str | None = None  # raw response JSON (only with --out)
+    error: str | None = None
+
+
+class VisibilityResult(BaseModel):
+    ran: bool = False
+    skipped_reason: str | None = None
+    brand_terms: list[str] = Field(default_factory=list)
+    calls: list[VisibilityCall] = Field(default_factory=list)
+    estimate_usd: float = 0.0
+    total_cost_usd: float = 0.0
+    month_to_date_usd: float = 0.0
+    monthly_cap_usd: float = 0.0
+
+
 class ScanReport(BaseModel):
     scanner_version: str
     url: str
@@ -224,3 +257,4 @@ class ScanReport(BaseModel):
     grade: Grade | None
     excluded_checks: int
     results: list[CheckResult]
+    visibility: VisibilityResult | None = None

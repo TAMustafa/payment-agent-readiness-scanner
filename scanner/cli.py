@@ -33,8 +33,17 @@ def scan(
         str | None, typer.Option("--checks", help="Comma-separated check ids or prefixes (D1,S2)")
     ] = None,
     visibility: Annotated[
-        bool, typer.Option("--visibility", help="Run V1 AI-visibility check (costs money)")
+        bool,
+        typer.Option(
+            "--visibility",
+            help="Run V1 AI-visibility check via OpenRouter (costs money; budget in "
+            "config/visibility.toml; needs OPENROUTER_API_KEY)",
+        ),
     ] = False,
+    visibility_prompts: Annotated[
+        Path | None,
+        typer.Option("--visibility-prompts", help="Own V1 questions: text file, one per line"),
+    ] = None,
     timeout: Annotated[float, typer.Option("--timeout", help="Hard scan timeout, seconds")] = 120.0,
     gmc_active: Annotated[
         bool | None,
@@ -76,6 +85,7 @@ def scan(
     options = ScanOptions(
         checks=checks.split(",") if checks else None,
         visibility=visibility,
+        visibility_prompts_file=str(visibility_prompts) if visibility_prompts else None,
         timeout_s=timeout,
         merchant_center_active=gmc_active,
         merchant_center_disapproved_pct=gmc_disapproved_pct,

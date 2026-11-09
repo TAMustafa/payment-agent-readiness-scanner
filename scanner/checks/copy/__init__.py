@@ -258,6 +258,22 @@ GUIDANCE: dict[str, dict[str, str]] = {
             "assistants can answer these questions directly."
         ),
     },
+    "V1.prompt_visibility": {
+        "nl": (
+            "AI-assistenten noemen je winkel weinig bij koopvragen in jouw categorieën. Zorg "
+            "dat je productpagina's en categorieën vindbaar en goed gestructureerd zijn (zie "
+            "de D- en S-checks), verdien vermeldingen op vergelijkings- en reviewsites en "
+            "houd merk- en categorienamen consistent. Let op: dit is een momentopname; "
+            "AI-antwoorden wisselen per keer en over tijd."
+        ),
+        "en": (
+            "AI assistants rarely mention your shop for buying questions in your categories. "
+            "Make product and category pages discoverable and well structured (see the D and "
+            "S checks), earn mentions on comparison and review sites, and keep brand and "
+            "category names consistent. Note: this is a snapshot; AI answers vary per run and "
+            "over time."
+        ),
+    },
 }
 
 

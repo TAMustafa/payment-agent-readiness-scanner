@@ -109,6 +109,11 @@ Inputs: 10 prompts, generated from shop category + 2 brand prompts + 8 non-brand
 (Dutch language, e.g. "beste e-bike accu kopen nederland"). Operator can override prompts.
 Implement as a LangGraph subgraph (prompt generation -> parallel assistant calls via Send -> parse mentions). Store raw responses. Run 2x and report both runs (results are non-deterministic).
 Mark clearly as "snapshot, varies over time". Behind `--visibility` flag (costs money).
+*Decided 2026-11-09 (Tarek):* all calls via **OpenRouter** with the providers' native web
+search; assistants **ChatGPT + Gemini** (models in `config/visibility.toml`); generic prompts
+from the scanned shop's own categories, fixed Dutch templates; **budget max EUR 10/month**
+(USD 10 cap: OpenRouter key limit + local ledger + per-call reservation). Measured live: full
+run ≈ USD 1.15 per scan (approved by Tarek; ≈ 8 scans/month). Details: `docs/VERIFY.md`.
 
 ## 5. Scoring and report
 - Score = Σ(weight × scoreFraction) over checks not `not_applicable`/`error`,
@@ -155,14 +160,14 @@ Magento), ideally in the chosen niche. Record them in `docs/VERIFY.md` with the 
 Do not hard-code them in source.
 
 ## 8. Build steps
-Status 2026-11-08: steps 1–2 **done** (see `docs/VERIFY.md`); step 3 next
-(`docs/NEXT_STEP.md`).
+Status 2026-11-09: steps 1–3 **done** (see `docs/VERIFY.md`); step 4 next.
 
 1. **CLI + static checks** *(done)*: project setup (uv, LangGraph skeleton graph with stub nodes first), fetch layer, robots, sitemap, sampling,
    platform fingerprint, D1–D4, S1–S6, P1–P3, JSON output. Verify on fixtures + 5 shops.
 2. **Checkout probe** *(done)*: Playwright, C1–C5, screenshots saved as evidence. Opt-in
    (`--checkout` / `--checkout-consent`), hard safety guards (`docs/SAFETY.md`).
-3. **AI visibility** *(next)*: V1 behind flag, cost logging, raw response storage.
+3. **AI visibility** *(done 2026-11-09; verified live)*: V1 behind flag, cost logging,
+   raw response storage. Via OpenRouter, hard budget caps (`docs/SAFETY.md`).
 4. **Report**: scoring, top 5 fixes, NL/EN HTML report.
 5. **Web front-end** (only after pilots): URL form → queued scan → report link.
 
@@ -170,10 +175,12 @@ Each step ends with: tests green, VERIFY.md updated, short summary of what's ver
 how, and what is not.
 
 ## 9. Open questions (confirm with Tarek)
-- Niche for the first outreach (affects default prompts in V1)
-- Which assistants/APIs to use for V1 and monthly budget
+- ~~Niche for the first outreach~~ — V1 builds prompts from each shop's categories (2026-11-09)
+- ~~Which assistants/APIs and monthly budget~~ — OpenRouter, ChatGPT + Gemini, EUR 10/month
+  (2026-11-09); 2 runs, plain httpx client (approved 2026-11-09)
+- (added 2026-11-09) V1 status thresholds: pass ≥ 60 % mentions, warn ≥ 30 % (initial choice)
 - Brand name of the service for report header
-- (added 2026-11-08) V1 prompt generation: deterministic templates or LLM-generated
+- ~~V1 prompt generation~~ — fixed templates (2026-11-09)
 - (added 2026-11-08) Effort sizes S/M/L per check (initial estimates in `registry.py`)
 - (added 2026-11-08) D5 thresholds: ≤ 5 % disapproved = pass, ≤ 20 % = warn (initial choice)
 - (added 2026-11-08) §6 support table: differences found vs. current vendor sources (above)

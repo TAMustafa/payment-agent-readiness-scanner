@@ -6,6 +6,7 @@ They will delegate to scanner.fetch / sampling / platform / report as those are 
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from langgraph.types import Send
 
 from scanner import __version__
 from scanner.checkout.probe import run_probe
+from scanner.checks import v1_visibility
 from scanner.checks.copy import get_guidance
 from scanner.checks.registry import REGISTRY, static_check_ids
 from scanner.deps import ScanDeps
@@ -36,6 +38,10 @@ from scanner.platform.fingerprint import fingerprint
 from scanner.sampling.select import sample
 from scanner.sampling.sitemap import collect_sitemaps
 from scanner.state import RunCheckInput, ScanState
+from scanner.visibility.config import load_config
+from scanner.visibility.graph import VisDeps, run_visibility
+from scanner.visibility.openrouter import OpenRouterClient
+from scanner.visibility.prompts import identify, load_override
 
 Update = dict[str, Any]
 
@@ -212,9 +218,46 @@ def route_after_checks(state: ScanState) -> str:
     return "visibility" if state["options"].visibility else "score"
 
 
-async def visibility(state: ScanState) -> Update:
-    # STUB (build step 3): V1 subgraph — the only LLM-using code.
-    return {}
+async def visibility(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
+    """V1 (build step 3): the only LLM-using code; contacts openrouter.ai only."""
+    opts = state["options"]
+    deps = runtime.context
+    cfg = load_config(Path(deps.visibility_config_path) if deps.visibility_config_path else None)
+    shop = identify(
+        state["origin"], state["basics"].home, state["pages"], cfg.run.category_questions
+    )
+    override = (
+        load_override(Path(opts.visibility_prompts_file)) if opts.visibility_prompts_file else None
+    )
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    raw_dir = Path(opts.artifacts_dir) / "visibility" / "raw" if opts.artifacts_dir else None
+    ledger_path = Path(deps.visibility_ledger_path or cfg.budget.ledger_path)
+    client = (
+        OpenRouterClient(
+            key,
+            timeout_s=cfg.run.timeout_s,
+            contact_url=os.environ.get("SCANNER_CONTACT_URL"),
+            transport=deps.openrouter_transport,
+        )
+        if key
+        else None
+    )
+    vdeps = VisDeps(
+        config=cfg, client=client, ledger_path=ledger_path, raw_dir=raw_dir, host=shop.domain
+    )
+    try:
+        vis = await run_visibility(shop, vdeps, override)
+    finally:
+        if client is not None:
+            await client.__aexit__()
+    ctx = ScanContext(
+        origin=state["origin"],
+        options=opts,
+        basics=state["basics"],
+        platform=state["platform"],
+        pages=state["pages"],
+    )
+    return {"visibility": vis, "results": [v1_visibility.build(ctx, vis)]}
 
 
 async def score(state: ScanState) -> Update:
@@ -253,5 +296,6 @@ async def render_report(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
         grade=None,
         excluded_checks=state.get("excluded_checks", 0),
         results=sorted(state["results"], key=lambda r: r.id),
+        visibility=state.get("visibility"),
     )
     return {"report": report}

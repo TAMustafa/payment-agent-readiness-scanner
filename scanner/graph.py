@@ -75,6 +75,9 @@ async def run_scan(
     transport: httpx.AsyncBaseTransport | None = None,
     min_interval_s: float = 1.0,
     browser_route_hook: Callable[[Any], Awaitable[None]] | None = None,
+    openrouter_transport: httpx.AsyncBaseTransport | None = None,
+    visibility_config_path: str | None = None,
+    visibility_ledger_path: str | None = None,
 ) -> ScanReport:
     opts = options or ScanOptions()
     graph = build_graph()
@@ -90,7 +93,13 @@ async def run_scan(
         transport=transport,
         time_budget_s=max(opts.timeout_s - RESERVE_S, 1.0),
     ) as client:
-        deps = ScanDeps(client=client, browser_route_hook=browser_route_hook)
+        deps = ScanDeps(
+            client=client,
+            browser_route_hook=browser_route_hook,
+            openrouter_transport=openrouter_transport,
+            visibility_config_path=visibility_config_path,
+            visibility_ledger_path=visibility_ledger_path,
+        )
         final = await graph.ainvoke(initial, context=deps)
     report: ScanReport = final["report"]
     return report

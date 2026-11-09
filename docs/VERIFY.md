@@ -123,3 +123,77 @@ add-to-cart detection is text-based (NL/EN button labels) and may miss icon-only
 - Checkout probe made opt-in; default scan of hema.nl reports C1 "not tested: checkout probe
   not enabled". CLI warns while `SCANNER_CONTACT_URL` is unset.
 - 206 tests pass (incl. new tests for both changes).
+
+### 2026-11-09 — Build step 3: V1 AI visibility (offline verified; live run pending)
+
+Built: `scanner/visibility/` (config, prompts, OpenRouter client, ledger, parse, LangGraph
+subgraph), `checks/v1_visibility.py`, CLI `--visibility` / `--visibility-prompts`.
+`uv run ruff check . && uv run mypy scanner && uv run pytest` → clean, 230 tests (12 V1 tests
+against a fake OpenRouter; no paid call made).
+
+Found and fixed by the tests before any live call:
+- Pre-run estimate used worst-case searches (2/question) → USD 1.02 > cap → every full scan
+  would have been refused. Now: estimate with `max_uses` (1), worst case enforced per call.
+- Conservative booking (usage.cost + search fee) makes a full run count ≈ USD 0.96; with a
+  USD 0.60 per-scan cap the run stopped after 25/40 calls. Per-scan cap set to USD 1.00.
+
+**Not verified yet (needs Tarek's OK for the first paid run):** live answers on 1–2 reference
+shops; whether `usage.cost` already includes the native search fee (then set
+`add_search_fee_to_cost = false` → ~18 instead of ~10 scans/month); whether `max_uses: 1`
+is honoured by native search; mention detection on real Dutch answers.
+
+### 2026-11-09 — First live V1 run: thuisbezorgd.nl (Tarek's choice), paid
+
+Setup: `--visibility --visibility-prompts <10 custom questions>` (food delivery, Almere/1358;
+the site puts our scanner behind a Cloudflare challenge, so no category names could be read;
+Tarek chose 10 custom questions over the 2 generated brand questions). Checkout probe off.
+OpenRouter key: limit USD 10, monthly reset, usage 0 before the run.
+
+Result: V1 `pass`, mentioned in 23/26 answers (88 %). ChatGPT 9/10 in both runs; Gemini 5/6
+before the per-scan guard stopped it. **Real cost: USD 0.60** (OpenRouter `usage_monthly`
+after reporting lag = sum of `usage.cost`; ledger had booked USD 1.17 by adding the search
+fee twice).
+
+Manual verification (raw answers in `scans/www.thuisbezorgd.nl/20261109T211104Z/visibility/raw/`):
+- Mentions correct on spot checks: e.g. "Chinees eten online bestellen in Almere" → ChatGPT
+  answers "Ga naar **Thuisbezorgd.nl**…", cited #1; "gezond eten in Almere" → ChatGPT
+  recommends ThuysVers / HelloFresh, Thuisbezorgd not mentioned → correctly `not mentioned`.
+- `usage.cost` == `/generation` `total_cost` and grows by exactly the per-search fee
+  (USD 0.01 OpenAI, 0.014 Google) → **usage.cost includes the search fee**.
+
+Found and fixed (regression tests added; 232 tests):
+1. **Per-scan cap leaked** (USD 1.17 booked vs USD 1.00 cap): parallel calls passed the
+   guard before any cost was booked, and native search did up to 3 searches. Now each call
+   reserves its worst case (3 searches) before it starts; check + reserve are atomic.
+2. **Double-booked search fee** → `add_search_fee_to_cost = false` (verified above).
+3. **`max_uses: 1` is not honoured by native search** (ChatGPT avg 1.7, Gemini avg 2.7
+   searches). The estimate now uses the measured `expected_searches` per assistant.
+4. **Gemini citations are Google redirect URLs** (`vertexaisearch.cloud.google.com/...`) →
+   real site taken from the citation title; re-parsed the 6 saved Gemini answers offline:
+   Thuisbezorgd now cited at #3, #9, #3 among real competitors (Uber Eats, Febo, …).
+
+Measured cost per question: ChatGPT (`openai/gpt-6-luna`) USD 0.0186, Gemini
+(`google/gemini-3.1-flash-lite`) USD 0.0383 → full run (10 × 2 runs × 2) ≈ **USD 1.15**,
+approved by Tarek; per-scan ceiling USD 1.40; ≈ 8 full scans per USD 10 month.
+
+**Not yet verified live:** generated (non-custom) questions on a shop that is not
+bot-protected.
+
+### 2026-11-09 — Second live V1 run (fixed version): thuisbezorgd.nl, same 10 questions
+
+New OpenRouter key (Tarek rotated it; limit USD 10, monthly reset; usage 0 before). The local
+ledger got a labelled correction entry (−USD 0.564) for run 1's double-counted search fee, so
+it matched the real USD 0.60 billed before this run.
+
+| | Run 1 (before fixes) | Run 2 (fixed) |
+|---|---|---|
+| Calls completed | 26/40 (per-scan guard stopped Gemini) | **40/40** |
+| Booked vs. billed | USD 1.17 booked / 0.60 billed | **USD 1.160 booked = 1.160 billed** (key `usage_monthly`, to the cent) |
+| Estimate | USD 0.54 | **USD 1.156** |
+| Mention rate | 23/26 (88 %) | **36/40 (90 %)** — ChatGPT 8/10 + 8/10, Gemini 10/10 + 10/10 |
+| Gemini citations | redirect URLs only | real sites (thuisbezorgd.nl, ubereats.com, …); Thuisbezorgd cited in 10/20, positions 1–7 |
+| ChatGPT citations | | Thuisbezorgd cited in 13/20, position 1 in 12 |
+| Searches per question | ChatGPT 1.70, Gemini 2.67 | ChatGPT 1.75, Gemini 2.70 (stable) |
+
+Month to date after both runs: USD 1.76 of USD 10 (ledger = old key 0.60 + new key 1.16).
+V1 is verified live end-to-end. Disputed results: 0.

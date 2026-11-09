@@ -17,6 +17,7 @@ from scanner.models import (
     ScanOptions,
     ScanReport,
     SiteBasics,
+    VisibilityResult,
 )
 
 
@@ -33,6 +34,7 @@ class ScanState(TypedDict):
     agent_probes: NotRequired[AgentProbes]
     endpoints: NotRequired[AgentEndpoints]
     checkout: NotRequired[CheckoutProbe]
+    visibility: NotRequired[VisibilityResult]
     # parallel check results are merged by list concatenation
     results: Annotated[list[CheckResult], operator.add]
     score: NotRequired[float | None]

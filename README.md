@@ -5,8 +5,8 @@ shopping agents (ChatGPT, Gemini / Google AI Mode, Perplexity, Claude, Copilot) 
 evidence-backed results per check. Built for merchants on WooCommerce, Shopify, Shopware 6,
 Lightspeed eCom and Magento.
 
-**Status (2026-11-08):** build steps 1–2 done; step 3 (AI visibility) is next — see
-[`docs/NEXT_STEP.md`](docs/NEXT_STEP.md).
+**Status (2026-11-09):** build steps 1–3 built and live-verified; step 4 (scoring + HTML
+report) is next — see [`docs/NEXT_STEP.md`](docs/NEXT_STEP.md).
 
 | Category | Checks | Status |
 |---|---|---|
@@ -14,7 +14,7 @@ Lightspeed eCom and Magento.
 | S — Structured product data | S1 Product JSON-LD · S2 offer/price match · S3 GTIN/MPN+brand · S4 shipping & returns markup · S5 reviews · S6 Organization | built |
 | C — Checkout readiness | C1 add to cart · C2 guest checkout · C3 iDEAL/Wero · C4 captcha · C5 policy text | built (C1/C2/C4 need `--checkout`) |
 | P — Agent protocols | P1 UCP profile · P2 platform channel · P3 MCP / ai-catalog / llms.txt | built |
-| V — AI visibility | V1 mentions in AI assistants | step 3 (not built) |
+| V — AI visibility | V1 mentions in ChatGPT + Gemini (via OpenRouter, max €10/month) | built and live-verified (`--visibility`) |
 | Scoring + HTML report | score, grade, top-5 fixes, NL/EN report | step 4 (not built; JSON only) |
 
 ## Setup
@@ -25,6 +25,8 @@ cp .env.example .env                      # then set SCANNER_CONTACT_URL to a re
 ```
 `SCANNER_CONTACT_URL` appears in our User-Agent (`AgentReadyScanner/<version> (+url)`); the
 CLI warns while it is unset. Run with `uv run --env-file .env scanner ...`.
+For V1 (step 3) add `OPENROUTER_API_KEY` — create the key with a USD 10 limit and monthly
+reset so OpenRouter itself enforces the budget (see `config/visibility.toml`).
 
 ## Usage
 ```bash
@@ -34,6 +36,7 @@ uv run scanner scan https://example.nl --checks D,S --json   # selected categori
 uv run scanner scan https://example.nl --gmc-active --gmc-disapproved-pct 3   # D5 input
 uv run scanner scan https://shop.nl --checkout --out scans/  # + cart/checkout probe
 uv run scanner scan https://shop.nl --checkout-consent --out scans/
+uv run --env-file .env scanner scan https://shop.nl --visibility --out scans/   # + V1 (paid)
 uv run scanner graph                                         # pipeline as Mermaid
 ```
 
@@ -46,7 +49,8 @@ uv run scanner graph                                         # pipeline as Merma
 | `--checkout-consent` | The merchant asked for the scan: probe may also enter cart/checkout paths that robots.txt disallows |
 | `--gmc-active / --gmc-inactive`, `--gmc-disapproved-pct` | Manual Merchant Center input for D5 (never guessed) |
 | `--timeout` | Hard scan timeout in seconds (default 120) |
-| `--visibility` | V1 AI-visibility check — reserved for step 3 (costs money) |
+| `--visibility` | V1 AI visibility via OpenRouter — costs money (≈ USD 1.15 per full scan; hard caps USD 1.40/scan and USD 10/month; needs `OPENROUTER_API_KEY`) |
+| `--visibility-prompts FILE` | Own V1 questions, one per line (replaces the generated ones) |
 
 Every result has a status (`pass`, `warn`, `fail`, `not_applicable`, `error`), a score
 fraction, evidence (URL, detail, snippet) and NL/EN fix guidance. Blocked, rate-limited or
@@ -68,7 +72,7 @@ browser, a never-click list, and an opt-in probe. Proven by `tests/test_safety.p
 
 ## Development
 ```bash
-uv run ruff check . && uv run mypy scanner && uv run pytest   # ~12 s, 206 tests
+uv run ruff check . && uv run mypy scanner && uv run pytest   # ~12 s, 232 tests
 ```
 Tests are fixture-based and offline; the probe tests drive real headless Chromium against
 fake shops served through Playwright routes.

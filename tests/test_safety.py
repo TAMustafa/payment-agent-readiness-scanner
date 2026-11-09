@@ -54,10 +54,63 @@ def _called_attrs(path: pathlib.Path) -> set[str]:
     }
 
 
+# The single documented exception: the V1 OpenRouter client must POST its chat requests,
+# and only to https://openrouter.ai (asserted by test_openrouter_client_is_pinned_to_openrouter).
+ALLOWED = {ROOT / "visibility" / "openrouter.py": {"post"}}
+
+
 @pytest.mark.parametrize("path", sorted(ROOT.rglob("*.py")), ids=lambda p: str(p.name))
 def test_no_code_types_submits_or_sends_non_get(path: pathlib.Path) -> None:
-    bad = _called_attrs(path) & FORBIDDEN_CALLS
+    bad = _called_attrs(path) & FORBIDDEN_CALLS - ALLOWED.get(path, set())
     assert not bad, f"{path}: forbidden calls {bad}"
+
+
+def test_openrouter_client_is_pinned_to_openrouter() -> None:
+    from scanner.visibility import openrouter
+
+    assert openrouter.BASE_URL == "https://openrouter.ai/api/v1"
+    assert openrouter.ALLOWED_HOST == "openrouter.ai"
+    src = (ROOT / "visibility" / "openrouter.py").read_text(encoding="utf-8")
+    assert src.count(".post(") == 1 and '.post("/chat/completions"' in src
+
+
+async def test_openrouter_client_refuses_other_hosts() -> None:
+    from scanner.visibility.openrouter import OpenRouterClient, OpenRouterError
+
+    client = OpenRouterClient("test-key")
+    with pytest.raises(OpenRouterError):
+        client._check_host("https://shop.example.nl/cart/add")
+    await client.__aexit__()
+
+
+def test_visibility_package_never_touches_shops() -> None:
+    """V1 talks to OpenRouter only: no crawler client, no browser, no shop fetches."""
+    for path in (ROOT / "visibility").rglob("*.py"):
+        src = path.read_text(encoding="utf-8")
+        for forbidden in ("PoliteClient", "playwright", "scanner.fetch", "scanner.checkout"):
+            assert forbidden not in src, f"{path} uses {forbidden}"
+
+
+def test_no_api_keys_in_git_tracked_files() -> None:
+    """Keys belong in .env (gitignored) only. Caught a real near-miss on 2026-11-09, when an
+    OpenRouter key was pasted into .env.example."""
+    import re
+    import subprocess
+
+    repo = ROOT.parent
+    files = subprocess.run(
+        ["git", "ls-files"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.split()
+    key = re.compile(
+        r"(sk-or-v1-[0-9a-f]{20,}|sk-(proj-)?[A-Za-z0-9_-]{32,}|AIza[0-9A-Za-z_-]{30,}"
+        r"|ghp_[A-Za-z0-9]{30,})"
+    )
+    for name in files:
+        path = repo / name
+        if path.suffix in {".png", ".jpg", ".gz"} or not path.is_file():
+            continue
+        assert not key.search(path.read_text(encoding="utf-8", errors="ignore")), name
+    assert ".env" in (repo / ".gitignore").read_text(encoding="utf-8").split()
 
 
 def test_http_client_only_uses_get() -> None:
