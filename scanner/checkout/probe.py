@@ -34,6 +34,7 @@ from scanner.checkout.markers import (
     PAYMENT_HOSTS,
     REJECT_COOKIES,
     REJECT_SELECTORS,
+    VISIBLE_CAPTCHA,
     captcha_in,
     payment_haystack,
     payment_methods_in,
@@ -186,7 +187,9 @@ class _Probe:
         await page.wait_for_timeout(SETTLE_MS)
         return resp
 
-    async def challenge_on(self, page: Any, resp: Any) -> str | None:
+    async def challenge_on(self, page: Any, resp: Any, *, visible_only: bool = True) -> str | None:
+        """Bot challenge page, or a captcha. Before checkout (`visible_only`) only a captcha
+        the visitor must solve counts; on checkout entry any captcha marker counts (C4)."""
         html = await page.content()
         res = FetchedResource(
             url=page.url,
@@ -197,6 +200,9 @@ class _Probe:
         v = classify(res)
         if v.outcome == "blocked":
             return v.reason
+        if visible_only:
+            seen = [name for name, sel in VISIBLE_CAPTCHA if await page.locator(sel).count() > 0]
+            return f"visible captcha on page ({', '.join(seen)})" if seen else None
         markers = captcha_in(html)
         return f"captcha on page ({', '.join(markers)})" if markers else None
 
@@ -491,7 +497,7 @@ class _Probe:
             self.out.added_to_cart = True
             if await self.open_checkout(page) is None:
                 return self.out
-            if (why := await self.challenge_on(page, None)) is not None:
+            if (why := await self.challenge_on(page, None, visible_only=False)) is not None:
                 self.out.challenge = why
                 self.out.checkout_reached = True
                 self.out.checkout_url = page.url

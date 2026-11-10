@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from scanner.checks import d5_merchant_center, p1_ucp, p2_platform, p3_endpoints
+from scanner.checks.copy import get_guidance
 from scanner.models import (
     AgentEndpoints,
     CheckResult,
@@ -79,7 +80,9 @@ async def test_p1_valid_shopify_profile_passes() -> None:
 async def test_p1_missing_profile_fails_and_copy_says_not_live_in_nl() -> None:
     r = await p1_ucp.check(ctx())
     assert r.status == "fail" and "HTTP 404" in details(r)
-    assert "nog niet live" in r.guidance  # never claim agent checkout is live in NL
+    # never claim agent checkout is live in NL (English is the default report language)
+    assert "not live in the Netherlands yet" in r.guidance
+    assert "nog niet live" in get_guidance("P1.ucp_profile", "nl")
 
 
 async def test_p1_spec_errors_and_hosting_issues() -> None:

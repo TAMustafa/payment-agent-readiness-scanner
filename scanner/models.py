@@ -52,7 +52,7 @@ class ScanOptions(BaseModel):
     # within the time budget; decided 2026-11-08 over longer scans.
     max_products: int = 8
     max_categories: int = 2
-    lang: Literal["nl", "en"] = "nl"
+    lang: Literal["nl", "en"] = "en"  # English default (Tarek, 2026-11-10)
     # D5 manual input (never guessed): Merchant Center feed active + disapproval percentage
     merchant_center_active: bool | None = None
     merchant_center_disapproved_pct: float | None = Field(default=None, ge=0, le=100)
@@ -243,14 +243,16 @@ class VisibilityResult(BaseModel):
     monthly_cap_usd: float = 0.0
 
 
-class CategoryScore(BaseModel):
-    """Score per category (SPEC §5), re-normalised over the category's scorable checks."""
+class StageScore(BaseModel):
+    """Score per stage of an agent order (scanner.report.scoring.STAGES), re-normalised over
+    the stage's scorable checks."""
 
-    category: Category
-    score: float | None  # 0..100; None = nothing scorable in this category
+    stage: str  # "access" | "product_data" | "checkout" | "protocols"
+    score: float | None  # 0..100; None = nothing scorable in this stage
     earned: float  # sum of weight x score_fraction
     scorable_weight: int  # weight of checks not excluded
-    total_weight: int  # catalogue weight of the category
+    total_weight: int  # catalogue weight of the stage
+    check_ids: list[str] = Field(default_factory=list)
     excluded: list[str] = Field(default_factory=list)  # ids not_applicable / error / not run
 
 
@@ -279,12 +281,16 @@ class ScanReport(BaseModel):
     sampling_notes: list[Evidence] = Field(default_factory=list)
     requests_made: int = 0
     score: float | None  # 0..100, None when nothing was scorable
-    grade: Grade | None
-    excluded_checks: int  # results not_applicable / error (not counted in the score)
-    not_run: list[str] = Field(default_factory=list)  # catalogue ids with no result at all
-    categories: list[CategoryScore] = Field(default_factory=list)
+    grade: Grade | None  # None: nothing scorable, or coverage below the minimum
+    coverage: float = 0.0  # measured share of in-scope weight (0..1)
+    excluded_checks: int  # in-scope results not_applicable / error (not in the score)
+    not_run: list[str] = Field(default_factory=list)  # in-scope ids with no result at all
+    stages: list[StageScore] = Field(default_factory=list)
+    # Checks that ran but are outside the report's scope (only V1, the paid AI-visibility
+    # snapshot): kept here in `results`, not scored, not in the HTML (decided 2026-11-10).
+    out_of_scope: list[str] = Field(default_factory=list)
     top_fixes: list[Fix] = Field(default_factory=list)
-    lang: Literal["nl", "en"] = "nl"
+    lang: Literal["nl", "en"] = "en"  # English default (Tarek, 2026-11-10)
     checkout_tested: bool = False  # the opt-in Playwright probe ran (methodology note)
     results: list[CheckResult]
     visibility: VisibilityResult | None = None

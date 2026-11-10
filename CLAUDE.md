@@ -9,9 +9,13 @@ Business model (context, not code): free scan = lead magnet → paid fix sprint 
 monthly monitoring retainer. Owner: Tarek (solo founder). Target: Dutch webshops,
 €5–50M revenue, on WooCommerce, Shopify, Shopware 6, Lightspeed eCom, Magento.
 
-The report sells **AI discovery today** (being found and recommended) and
-**agent-checkout readiness** as the forward-looking upsell. Agentic checkout is NOT
+The report measures readiness to be **found by AI agents and to accept their orders and
+payments** (Tarek, 2026-11-10): 19 checks in 4 stages; only V1 (paid) is outside the report
+and stays in report.json. See SPEC §5 and `docs/RELEVANCE.md`. Agentic checkout is NOT
 live for Dutch merchants yet (as of Nov 2026) — never claim otherwise in report copy.
+This means checkout *inside* AI assistants; card-network agent payments on merchant sites
+started in Europe (Visa, July 2026) — see `docs/RELEVANCE.md`. Report language: English by
+default (`--lang nl` for Dutch; decided 2026-11-10).
 
 The full check catalogue and acceptance criteria live in `SPEC.md`. Read it before
 implementing any check.
@@ -22,7 +26,8 @@ implementing any check.
 - **Step 3 (V1 AI visibility): built and verified live (2026-11-09)**, 232 tests green.
   Measured ≈ USD 1.15 per full scan (approved), ≈ 8 scans/month. Remaining items: top of
   **`docs/NEXT_STEP.md`**; details in `docs/VERIFY.md`. Settings: `config/visibility.toml`.
-- **Step 4 (scoring + NL/EN HTML report): built and verified (2026-11-10)**, 264 tests green.
+- **Step 4 (scoring + NL/EN HTML report): built and verified (2026-11-10)**, 279 tests green.
+  Report scoped to agent-order readiness (4 stages, "why it matters" box per check).
   `scanner/report/`; open points at the end of `docs/VERIFY.md` (merchant test, brand name).
 - **Then:** pilots with real merchants; step 5 (web front-end) only after pilots.
 - **Logs:** `docs/VERIFY.md` (reference shops, every verification run, known limits),
@@ -115,7 +120,7 @@ scanner/
                     # POST in the codebase, pinned to openrouter.ai), ledger.py (monthly
                     # costs), parse.py (mentions/citations), graph.py (LangGraph subgraph +
                     # budget guards); settings: config/visibility.toml
-  report/           # scoring.py (SPEC §5 score, grade, categories, top 5 fixes),
+  report/           # scoring.py (SPEC §5 scope/STAGES, score, grade, top 5 fixes),
                     # html.py (self-contained printable HTML, stdlib only), i18n.py (NL/EN)
 tests/
   fixtures/         # robots, sitemaps, home/product pages per platform, UCP profile
@@ -199,5 +204,5 @@ guessed `fail`); nothing to test → `not_applicable`; emerging standards (P3) �
 - `uv run scanner graph` (Mermaid of the pipeline)
 - `uv run ruff check . && uv run mypy scanner`
 - `uv run --env-file .env scanner scan https://example.nl --visibility --out scans/` (V1, paid)
-- `uv run pytest` (≈12 s, 264 tests; probe tests drive real headless Chromium against fake
+- `uv run pytest` (≈13 s, 279 tests; probe tests drive real headless Chromium against fake
   shops; V1 tests use a fake OpenRouter — no paid calls)

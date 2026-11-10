@@ -97,6 +97,25 @@ CAPTCHA_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("AWS WAF captcha", re.compile(r"awswaf.*captcha|captcha\.awswaf", re.I)),
 )
 
+# A captcha a visitor actually has to solve: a visible widget or challenge frame. Script
+# tags / class names alone (CAPTCHA_MARKERS) are not enough before checkout: many shops load
+# invisible reCAPTCHA (v3, or v2 size=invisible with only a corner badge) site-wide for their
+# forms, and visitors never see a challenge (false C1 fail on fixje.nl, 2026-11-10).
+# Playwright CSS with the :visible pseudo-class.
+VISIBLE_CAPTCHA: tuple[tuple[str, str], ...] = (
+    (
+        "reCAPTCHA",
+        "iframe[src*='recaptcha'][src*='anchor']:not([src*='size=invisible']):visible, "
+        "iframe[src*='recaptcha'][src*='bframe']:visible",
+    ),
+    ("hCaptcha", "iframe[src*='hcaptcha.com']:visible"),
+    (
+        "Cloudflare Turnstile",
+        ".cf-turnstile:visible, iframe[src*='challenges.cloudflare.com']:visible",
+    ),
+    ("Friendly Captcha", ".frc-captcha:visible"),
+)
+
 # --- payment methods (text, img alt/src/title) ------------------------------------------
 PAYMENT_METHODS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("iDEAL", re.compile(r"\bideal\b", re.I)),

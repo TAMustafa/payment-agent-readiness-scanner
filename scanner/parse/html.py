@@ -101,6 +101,36 @@ def types_of(node: dict[str, Any]) -> set[str]:
     return {str(v).rsplit("/", 1)[-1].rsplit(":", 1)[-1] for v in values if v}
 
 
+LISTING_MIN_ITEMS = 3
+
+
+def _lists_products(nodes: list[dict[str, Any]]) -> bool:
+    for n in nodes:
+        if "ItemList" in types_of(n):
+            items = n.get("itemListElement")
+            if isinstance(items, list) and len(items) >= LISTING_MIN_ITEMS:
+                return True
+    return False
+
+
+# Product-detail page markers the platforms put on <body> by default. Used when a product
+# page carries no Product markup at all (fixje.nl accessories, 2026-11-10): rejecting those
+# pages turned missing markup into "not measured" instead of a measured fail.
+# WooCommerce body_class() "single-product"; Magento layout handle "catalog-product-view";
+# Shopware 6 storefront "is-ctl-product"; Shopify themes "template-product" (theme-dependent).
+PRODUCT_BODY_CLASSES = frozenset(
+    {"single-product", "catalog-product-view", "is-ctl-product", "template-product"}
+)
+
+
+def is_platform_product_page(html: str) -> bool:
+    body = parse(html).css_first("body")
+    if body is None:
+        return False
+    classes = set((body.attributes.get("class") or "").split())
+    return bool(classes & PRODUCT_BODY_CLASSES)
+
+
 def has_product_jsonld(html: str) -> bool:
     return any(types_of(n) & {"Product", "ProductGroup"} for n in jsonld_nodes(html))
 
@@ -119,10 +149,16 @@ def is_single_product_page(html: str) -> bool:
     Listing pages (Shopify collections, Shopware category tiles) can carry several Product
     items; those are not product pages. A ProductGroup with its variants counts as one.
     """
-    nodes = [n for n in jsonld_nodes(html) if types_of(n) & {"Product", "ProductGroup"}]
+    all_nodes = jsonld_nodes(html)
+    nodes = [n for n in all_nodes if types_of(n) & {"Product", "ProductGroup"}]
     groups = [n for n in nodes if "ProductGroup" in types_of(n)]
-    if len(groups) == 1 or len(nodes) == 1:
+    if len(groups) == 1:
         return True
+    if len(nodes) == 1:
+        # A category page can describe its product line as one Product without an offer
+        # next to an ItemList of product links (fixje.nl /refurbished-iphone/, 2026-11-10).
+        # A real product page with a "related products" list still has its own offer.
+        return "offers" in nodes[0] or not _lists_products(all_nodes)
     if not nodes:
         return count_product_microdata(html) == 1
     return False

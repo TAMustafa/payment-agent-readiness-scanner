@@ -36,13 +36,22 @@ def ctx(
 
 
 async def test_c3_from_footer_logos_and_payment_page() -> None:
-    footer = '<footer><img src="/logos/ideal.svg" alt=""><img alt="Klarna"></footer>'
+    footer = '<footer><img src="/logos/ideal.svg" alt=""><img alt="Visa"></footer>'
     r = await c3_payment_methods.check(ctx(home=footer))
-    assert r.status == "pass" and "iDEAL" in r.evidence[0].detail
+    assert r.status == "pass" and "iDEAL" in r.evidence[0].detail and "Visa" in r.evidence[0].detail
+    # iDEAL without any card option: agents cannot pay (ACP/UCP are card-based) -> warn 0.5
+    ideal_only = await c3_payment_methods.check(
+        ctx(home='<footer><img src="/logos/ideal.svg" alt=""><img alt="Klarna"></footer>')
+    )
+    assert ideal_only.status == "warn" and ideal_only.score_fraction == 0.5
+    assert "card" in ideal_only.evidence[0].detail
+    wallet = await c3_payment_methods.check(ctx(home="<p>Betaal met iDEAL of Google Pay</p>"))
+    assert wallet.status == "pass"  # Google Pay = card wallet (UCP's payment handler)
     no_ideal = await c3_payment_methods.check(
         ctx(policies={"payment": page("/betaalmethoden", "<p>Betaal met PayPal of Visa</p>")})
     )
-    assert no_ideal.status == "warn" and "not proof" in no_ideal.evidence[0].detail
+    assert no_ideal.status == "warn" and no_ideal.score_fraction == 0.5  # Visa, no iDEAL
+    assert "iDEAL / Wero not seen" in no_ideal.evidence[0].detail
     seen = ctx(
         policies={"payment": page("/betaalmethoden", "<p>PayPal</p>")},
         probe=CheckoutProbe(checkout_reached=True, checkout_url=f"{ORIGIN}/checkout"),

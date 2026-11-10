@@ -111,7 +111,12 @@ _SPECS: list[CheckSpec] = [
         "C2.guest_checkout", "checkout", "Guest checkout available", 6, "M", c2_guest_checkout.check
     ),
     CheckSpec(
-        "C3.payment_methods", "checkout", "iDEAL / Wero offered", 4, "S", c3_payment_methods.check
+        "C3.payment_methods",
+        "checkout",
+        "Cards and iDEAL / Wero offered",
+        4,
+        "S",
+        c3_payment_methods.check,
     ),
     CheckSpec(
         "C4.captcha_checkout",

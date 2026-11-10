@@ -226,3 +226,87 @@ was not actually verified. Low impact (weight 2, never `fail`).
 
 **Not verified yet:** report understood by a real merchant (SPEC §1); a full report with
 checkout probe + V1 on one shop (both need approval / cost money); EN copy reviewed by Tarek.
+
+### 2026-11-10 — Report scoped to agent-order readiness; reference run (static, no V1)
+
+Tarek's decision: the report measures readiness to accept orders from AI agents. Score, fixes
+and HTML now cover 16 checks in four stages (Reach D1/D2/D4 · Understand S1–S4/D5 · Check out
+C1–C5 · Connect P1–P3); D3, S5, S6, V1 run but are `out_of_scope` in report.json. Each check
+has a "why it matters" box. Removed from the HTML: separate "what's coming" section (now in
+the intro), sampling notes, weights, long methodology; evidence capped at 3 lines.
+New rule found during this run: **no grade below 50 % measured weight** (`MIN_COVERAGE`) —
+stoov.com scored "Ready 86.7" on 26/80 weight with zero product pages. Now "Too little
+measured to judge", score marked provisional. 273 tests green.
+
+V1 was dropped from the planned fixje.nl run (out of the new scope; saved ≈ USD 1.15).
+
+| Shop | Platform | Agent-order score (scope) | Measured weight | Notes / manual check |
+|---|---|---|---|---|
+| duifhuizen.nl | shopware6 | 76.2 Partly ready | 63/80 | see run above (S4 confirmed by curl) |
+| dille-kamille.nl | magento | 62.1 Partly ready | 58/80 | Checkout stage 0: C3 `warn` 0.0 "no payment info found", C5 `error` (no shipping/returns page sampled). Manual: home HTML has no iDEAL text (only PayPal module config) — the result is what the scanner can see, but "not found" weighing as 0 is harsh → **open point**: should C3 "not found" be `error` (unverifiable) instead of `warn`? |
+| hema.nl | other | 70.7 Partly ready | 60/80 | 8 products, all policies; P1/P3 no UCP/MCP. |
+| jhparts.nl | lightspeed | 75.9 Partly ready | 60/80 | **First run without Cloudflare challenge**: fingerprinted as lightspeed from the page itself, 8 products. D2 warn (CDN fake-bot protection). |
+| stoov.com | shopify | 86.7 → **no grade** (provisional) | 26/80 | 429 + Retry-After again: 0 products, policies only. Led to the coverage rule. |
+
+All 5 platforms now scan without a crash (SPEC §1 criterion 1). Not yet verified by hand for
+this run: every individual check per shop (criterion 2 is from earlier rounds).
+
+### 2026-11-10 — fixje.nl with checkout probe (approved "once per shop" run used), no V1
+
+`--checkout`, no V1. 58.4 Not ready (old report), coverage 85 %. 2 products only (3× 429).
+Probe stopped on the product page: "captcha on page (reCAPTCHA)" → C1 fail, C2/C4 error.
+**Manual check: false result.** The probe screenshot (`checkout_00_challenge.png`) shows a
+normal product page, no captcha; fixje.nl loads invisible reCAPTCHA site-wide. The safety
+guard also blocked 11 non-GET requests (admin-ajax.php, Cloudflare challenge-platform
+telemetry), as designed.
+
+**Fix:** before checkout the probe now stops only on a bot-challenge page or a *visible*
+captcha (`markers.VISIBLE_CAPTCHA`: reCAPTCHA checkbox/challenge frame, hCaptcha frame,
+Turnstile, Friendly Captcha, all with Playwright `:visible`). On checkout entry any captcha
+marker still counts for C4 (SPEC). Two new browser tests (invisible badge passes, visible
+checkbox blocks). The guards and `tests/test_safety.py` are unchanged.
+**Not re-verified live:** a second probe run on fixje.nl needs Tarek's approval (the one
+approved run is used).
+
+Other results on fixje.nl, checked against the saved data: S3 fail (no GTIN/MPN on the 2
+pages), S4 fail, C5 pass (shipping cost, delivery time, return window stated), P3 warn
+(llms.txt present).
+
+### 2026-11-10 — fixje.nl re-run (approved by Tarek), English default, relevance review
+
+- Report language is now **English by default** (`--lang nl` for Dutch); all saved reports
+  re-rendered in English.
+- **Captcha fix verified live:** the probe passed the product page ("product: ok - HTTP 200");
+  no false reCAPTCHA challenge.
+- **New false result found:** the only product sampled (3× 429 again) was
+  `https://www.fixje.nl/refurbished-iphone/`, a **category page** carrying one offer-less
+  `Product` (product line + rating) next to an `ItemList` of 36 product links. So
+  "no add-to-cart button found" (C1/C2/C4 `error`) and S2/S3/S4 fails were about the wrong
+  page type. Fix: `is_single_product_page` rejects a single Product without `offers` when the
+  page also has an ItemList of ≥ 3 items (a product page with a related-products list keeps
+  its own offer). Checked against the saved category HTML → now rejected. 2 new tests.
+  **Not re-verified live** (another probe run on fixje.nl needs approval).
+- D2 guidance now advises allowing signed agents (Web Bot Auth). Relevance review of every
+  check against current agent-commerce docs: `docs/RELEVANCE.md`.
+- 278 tests green.
+
+### 2026-11-10 (evening) — C3 cards, discovery back in scope, product pages without markup
+
+- **C3** now needs a card option (Visa/Mastercard/Amex or Apple/Google Pay) **and** iDEAL/Wero
+  (pass); one of the two = warn 0.5. Reason and sources: `docs/RELEVANCE.md`.
+- **Scope revised:** D3, S5, S6 back in the report (merchant discovery); only V1 outside. Stage 1
+  renamed "Find and reach". In-scope weight is now 90.
+- **New false result found (pre-existing):** fixje.nl accessory product pages
+  (`/iphone-12-tempered-glass`) carry **no Product markup**, so the sampler rejected them and
+  every S-check became "not measured" instead of a measured fail — this inflated scores.
+  Fix: also confirm product pages by the platform's product body class (WooCommerce
+  `single-product`, Magento `catalog-product-view`, Shopware 6 `is-ctl-product`, Shopify
+  themes `template-product`). Checked on the saved fixje.nl pages: product page → yes,
+  category page (`archive tax-product_cat`) → no. 1 new test.
+- **fixje.nl reruns (approved):** 20:37 and 20:40 UTC. Both yielded 0 product pages (429 +
+  time budget; the first started before the fixes). The second was run only 3 minutes after the
+  first, against our spacing rule — my mistake. fixje.nl was scanned 4× this evening;
+  **do not scan it again before tomorrow**. Result: no grade (coverage rule), C1/C2/C4 "could
+  not verify". **The fixes are verified offline against fixje.nl's real HTML, not live.**
+  Suggestion for the next run: `--timeout 240` so sampling has time after the 429 back-off.
+- 279 tests green.

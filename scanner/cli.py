@@ -64,7 +64,7 @@ def scan(
             "Only for shops you have permission to test. robots.txt is still respected.",
         ),
     ] = False,
-    lang: Annotated[str, typer.Option("--lang", help="Report language: nl (default) or en")] = "nl",
+    lang: Annotated[str, typer.Option("--lang", help="Report language: en (default) or nl")] = "en",
     checkout_consent: Annotated[
         bool,
         typer.Option(
@@ -121,7 +121,7 @@ def scan(
 def report(
     report_json: Annotated[Path, typer.Argument(help="A saved report.json")],
     lang: Annotated[
-        str | None, typer.Option("--lang", help="nl or en (default: the scan's language)")
+        str | None, typer.Option("--lang", help="en or nl (default: the scan's language)")
     ] = None,
     out: Annotated[
         Path | None, typer.Option("--out", help="HTML file (default: report.html next to it)")
@@ -129,16 +129,19 @@ def report(
 ) -> None:
     """Re-render report.html from a saved report.json (no network access)."""
     saved = ScanReport.model_validate_json(report_json.read_text(encoding="utf-8"))
-    if saved.grade is None and saved.score is None and saved.results:
-        # Reports from before build step 4 have no score yet: compute it now.
+    if saved.results:
+        # Always re-score with the current rules: older reports have no score (before
+        # build step 4) or were scored over all checks (before the agent-order scope).
         s = summarise(saved.results)
         saved = saved.model_copy(
             update={
                 "score": s.score,
                 "grade": s.grade,
+                "coverage": s.coverage,
                 "excluded_checks": s.excluded_checks,
                 "not_run": s.not_run,
-                "categories": s.categories,
+                "stages": s.stages,
+                "out_of_scope": s.out_of_scope,
                 "top_fixes": s.top_fixes,
             }
         )

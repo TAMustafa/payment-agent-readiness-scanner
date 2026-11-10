@@ -1,9 +1,18 @@
-"""C3.payment_methods — iDEAL / Wero offered; note cards, PayPal, Klarna, Apple/Google Pay.
+"""C3.payment_methods — cards (for agent payments) and iDEAL / Wero (for Dutch customers).
+
+Changed 2026-11-10 (Tarek: "only if agent documentation requires cards"; it does):
+- OpenAI ACP Delegated Payment Spec: payment method is a card ("fpan" or "network_token")
+  https://developers.openai.com/commerce/specs/payment
+- Google UCP: Google Pay payment handler (card credentials); the merchant's PSP must process
+  Google's tokens https://developers.google.com/merchant/ucp/faq
+- Visa Intelligent Commerce / Mastercard Agent Pay: agentic card tokens.
+iDEAL / Wero stay required for the Dutch customer (bank redirect, handed back to the shop).
 
 Sources: the checkout page (probe), the home page and policy pages (payment logos and text).
 Privacy pages are excluded: they list data processors (e.g. Klarna), not payment methods.
-Pass if iDEAL or Wero is present. Fail only when the probe saw the checkout itself without
-them; when only home/policy pages were seen, missing logos are a warn (not proof).
+Pass: a card option (Visa, Mastercard, Amex, or the card wallets Apple Pay / Google Pay) AND
+iDEAL or Wero. One of the two: warn (0.5). Neither: fail when the probe saw the checkout,
+otherwise warn (missing logos on home/policy pages are not proof).
 """
 
 from __future__ import annotations
@@ -13,7 +22,8 @@ from scanner.checks.base import result
 from scanner.models import CheckResult, Evidence, ScanContext
 
 CHECK_ID = "C3.payment_methods"
-REQUIRED = ("iDEAL", "Wero")
+DUTCH = ("iDEAL", "Wero")
+CARDS = ("Visa", "Mastercard", "American Express", "Apple Pay", "Google Pay")
 
 
 async def check(ctx: ScanContext) -> CheckResult:
@@ -37,29 +47,36 @@ async def check(ctx: ScanContext) -> CheckResult:
             ],
         )
     evidence = [Evidence(url=url, detail=f"{m} shown") for m, url in sorted(found.items())]
-    have = [m for m in REQUIRED if m in found]
-    if have:
+    dutch = [m for m in DUTCH if m in found]
+    cards = [m for m in CARDS if m in found]
+    if dutch and cards:
         evidence.insert(
             0,
-            Evidence(
-                detail=f"{' and '.join(have)} offered; also: "
-                + ", ".join(m for m in sorted(found) if m not in have)
-            ),
+            Evidence(detail=f"Cards ({', '.join(cards)}) and {' and '.join(dutch)} offered"),
         )
         return result(CHECK_ID, ctx, "pass", 1.0, evidence)
+    if dutch or cards:
+        missing = (
+            "no card payment (Visa/Mastercard or Apple/Google Pay) seen: needed for agent payments"
+            if dutch
+            else "iDEAL / Wero not seen: the payment Dutch customers expect"
+        )
+        where = "" if ctx.checkout.checkout_reached else " (checkout not inspected)"
+        evidence.insert(0, Evidence(detail=f"{', '.join(dutch + cards)} offered; {missing}{where}"))
+        return result(CHECK_ID, ctx, "warn", 0.5, evidence)
     if ctx.checkout.checkout_reached:
         evidence.insert(
             0,
             Evidence(
                 url=ctx.checkout.checkout_url,
-                detail="Neither iDEAL nor Wero offered on the checkout page",
+                detail="Neither cards nor iDEAL / Wero offered on the checkout page",
             ),
         )
         return result(CHECK_ID, ctx, "fail", 0.0, evidence)
     evidence.insert(
         0,
         Evidence(
-            detail="iDEAL / Wero not listed on the home or policy pages "
+            detail="Cards and iDEAL / Wero not listed on the home or policy pages "
             "(checkout not inspected, so not proof they are missing)"
         ),
     )

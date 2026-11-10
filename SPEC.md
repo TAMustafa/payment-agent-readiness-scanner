@@ -10,7 +10,9 @@ v1 is done when:
       (logged in `docs/VERIFY.md`); tolerance: max 1 disputed check per shop.
 - [ ] Report is understandable by a non-technical merchant without explanation
       (tested with 1 real merchant).
-- [ ] Cost of the visibility check is logged per scan and stays under €0.50.
+- [ ] Cost of the visibility check is logged per scan and stays under USD 1.40 per scan
+      and USD 10 per month (changed 2026-11-10, was €0.50: measured ≈ USD 1.15 per full
+      scan with ChatGPT + Gemini, approved by Tarek 2026-11-09).
 
 ## 2. Out of scope for v1
 - Placing orders, logging in, or any payment step
@@ -71,7 +73,7 @@ open checkout. STOP before entering any personal data. Never click pay/order but
 |---|---|---|---|
 | C1.add_to_cart | Add-to-cart works headless without captcha or bot challenge | 5 | Fail on challenge, warn on >2 interstitials (cookie walls count once) |
 | C2.guest_checkout | Checkout reachable without forced account creation | 6 | Detect login wall vs guest option |
-| C3.payment_methods | iDEAL / Wero listed on checkout or payment info page; note cards, PayPal, Klarna, Apple/Google Pay | 4 | Pass if iDEAL or Wero present |
+| C3.payment_methods | Cards (Visa/Mastercard/Amex or Apple/Google Pay) **and** iDEAL / Wero listed on checkout or payment info page; note PayPal, Klarna | 4 | Pass if both; warn 0.5 if one (changed 2026-11-10: ACP and Google UCP agent payments are card-based, see `docs/RELEVANCE.md`) |
 | C4.captcha_checkout | No captcha on checkout entry | 3 | Detect reCAPTCHA, hCaptcha, Turnstile markers |
 | C5.policies_clear | Shipping cost/time and return window stated in plain text on policy pages | 2 | Regex for days/costs in NL + EN |
 If the probe cannot reach checkout for a technical reason → `error`, not `fail`.
@@ -116,6 +118,14 @@ from the scanned shop's own categories, fixed Dutch templates; **budget max EUR 
 run ≈ USD 1.15 per scan (approved by Tarek; ≈ 8 scans/month). Details: `docs/VERIFY.md`.
 
 ## 5. Scoring and report
+*Scope decision (Tarek, 2026-11-10, revised the same day):* the report measures readiness to
+be **found by AI agents and to accept their orders and payments**. Score, top fixes and HTML
+cover 19 checks in four stages: **1 Find and reach** (D1–D4), **2 Understand** (S1–S6, D5),
+**3 Check out** (C1–C5), **4 Connect** (P1–P3). Only V1 (paid AI-visibility snapshot) is out of
+scope: it runs on request and stays in `report.json` as `out_of_scope`. Weights are unchanged;
+the score is re-normalised over the in-scope checks, and there is no grade below 50 % measured
+weight. Each in-scope check gets a "why it matters" box (`scanner/report/i18n.py`).
+The bullets below apply within that scope.
 - Score = Σ(weight × scoreFraction) over checks not `not_applicable`/`error`,
   re-normalised to 100. Show how many checks were excluded.
 - Grade: ≥80 Ready · 60–79 Partly ready · <60 Not ready.

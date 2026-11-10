@@ -67,9 +67,32 @@ CHECKOUT_CAPTCHA = """<html><head><script src="https://www.google.com/recaptcha/
 CHALLENGE = "<html><head><title>Just a moment...</title></head><body>cf-chl-</body></html>"
 
 
+# Invisible reCAPTCHA loaded site-wide (v3 / v2 size=invisible): only a corner badge.
+INVISIBLE_RECAPTCHA = """<script src="https://www.google.com/recaptcha/api.js?render=k"></script>
+<div class="grecaptcha-badge" style="width:256px;height:60px;position:fixed;right:0;bottom:0">
+<iframe src="https://www.google.com/recaptcha/api2/anchor?k=k&size=invisible"
+ width="256" height="60"></iframe></div>
+<iframe src="https://www.google.com/recaptcha/api2/bframe?k=k"
+ style="visibility:hidden;width:1px;height:1px"></iframe>"""
+# A reCAPTCHA v2 checkbox the visitor has to tick.
+VISIBLE_RECAPTCHA = """<div class="g-recaptcha"><iframe
+ src="https://www.google.com/recaptcha/api2/anchor?k=k&size=normal"
+ width="304" height="78"></iframe></div>"""
+
+
+def product_with(extra: str) -> str:
+    return PRODUCT_HTML.replace("</body>", extra + "</body>")
+
+
 class BrowserShop:
-    def __init__(self, checkout_html: str = CHECKOUT_GUEST, challenge: bool = False) -> None:
+    def __init__(
+        self,
+        checkout_html: str = CHECKOUT_GUEST,
+        challenge: bool = False,
+        product_html: str = PRODUCT_HTML,
+    ) -> None:
         self.checkout_html = checkout_html
+        self.product_html = product_html
         self.challenge = challenge
         self.added = False
         self.requests: list[tuple[str, str]] = []  # (method, path)
@@ -89,7 +112,7 @@ class BrowserShop:
                     headers={"cf-mitigated": "challenge"},
                 )
             else:
-                await route.fulfill(status=200, body=PRODUCT_HTML, content_type="text/html")
+                await route.fulfill(status=200, body=self.product_html, content_type="text/html")
         elif path == "/cart/add" and req.method == "POST":
             self.added = True
             await route.fulfill(status=200, body="{}", content_type="application/json")
@@ -211,3 +234,20 @@ async def test_consent_lifts_robots_for_checkout() -> None:
     shop = BrowserShop()
     p = await run(shop, robots="User-agent: *\nDisallow: /checkout\n", consent=True)
     assert p.checkout_reached and ("GET", "/checkout") in shop.requests
+
+
+async def test_invisible_recaptcha_on_product_page_does_not_block() -> None:
+    # fixje.nl, 2026-11-10: site-wide invisible reCAPTCHA was read as a bot challenge.
+    shop = BrowserShop(product_html=product_with(INVISIBLE_RECAPTCHA))
+    p = await run(shop)
+    assert p.challenge is None, p.challenge
+    assert p.added_to_cart and p.checkout_reached
+    assert (await c1_add_to_cart.check(ctx_with(p))).status != "fail"
+
+
+async def test_visible_captcha_on_product_page_blocks() -> None:
+    shop = BrowserShop(product_html=product_with(VISIBLE_RECAPTCHA))
+    p = await run(shop)
+    assert p.challenge is not None and "visible captcha" in p.challenge
+    assert not shop.added
+    assert (await c1_add_to_cart.check(ctx_with(p))).status == "fail"

@@ -10,7 +10,8 @@ Order: policies first (4 cheap pages; Shopify rate-limits product pages, not the
 On Shopify our UA gets ~1-2 product pages before HTTP 429 + Retry-After 60 (observed
 2026-11-08, even at 3 s/request); product markup comes from one theme template, so a
 small sample is still representative there.
-Products are confirmed by a single JSON-LD Product/ProductGroup, Product microdata, or an
+Products are confirmed by a single JSON-LD Product/ProductGroup, Product microdata, a
+platform's product-page body class (no markup at all), or an
 unambiguous URL shape.
 """
 
@@ -29,7 +30,7 @@ from scanner.models import (
     SiteBasics,
     SitemapEntry,
 )
-from scanner.parse.html import Link, is_single_product_page, links
+from scanner.parse.html import Link, is_platform_product_page, is_single_product_page, links
 from scanner.sampling.urls import (
     SHOPIFY_POLICY_PATHS,
     is_catalogue_link,
@@ -175,7 +176,9 @@ class _Run:
                 self.note("Product sampling stopped: scan time budget reached")
                 break
             ok = _ok(res) and (
-                is_single_product_page(res.body or "") or looks_like_product_url(url)
+                is_single_product_page(res.body or "")
+                or is_platform_product_page(res.body or "")
+                or looks_like_product_url(url)
             )
             if ok:
                 self.out.products.append(res)

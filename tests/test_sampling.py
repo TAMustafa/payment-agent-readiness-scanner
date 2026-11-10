@@ -12,7 +12,13 @@ from scanner.models import (
     SitemapEntry,
     SitemapInfo,
 )
-from scanner.parse.html import has_product_jsonld, is_single_product_page, jsonld_nodes, links
+from scanner.parse.html import (
+    has_product_jsonld,
+    is_platform_product_page,
+    is_single_product_page,
+    jsonld_nodes,
+    links,
+)
 from scanner.platform.fingerprint import fingerprint
 from scanner.sampling.select import sample, spread
 from scanner.sampling.sitemap import _child_priority
@@ -194,3 +200,45 @@ def test_locale_copies_deprioritised_and_locale_roots_skipped() -> None:
     assert not is_catalogue_link("https://s.nl/de")
     assert not is_catalogue_link("https://s.nl/en-gb/")
     assert is_catalogue_link("https://s.nl/de/products/x")
+
+
+def _ld(*nodes: object) -> str:
+    import json
+
+    return (
+        '<html><script type="application/ld+json">'
+        + json.dumps({"@context": "https://schema.org", "@graph": list(nodes)})
+        + "</script></html>"
+    )
+
+
+ITEM_LIST = {
+    "@type": "ItemList",
+    "itemListElement": [
+        {"@type": "ListItem", "position": i, "url": f"https://shop.nl/p/{i}"} for i in range(5)
+    ],
+}
+
+
+def test_category_with_offerless_product_line_is_not_a_product_page() -> None:
+    # fixje.nl /refurbished-iphone/: Product (name, brand, aggregateRating, no offers) + ItemList
+    line = {"@type": "Product", "name": "Refurbished iPhone", "aggregateRating": {"ratingValue": 9}}
+    assert not is_single_product_page(_ld(line, ITEM_LIST))
+
+
+def test_product_with_offer_and_related_list_is_still_a_product_page() -> None:
+    product = {"@type": "Product", "name": "iPhone 12", "offers": {"price": "229"}}
+    assert is_single_product_page(_ld(product, ITEM_LIST))
+    assert is_single_product_page(_ld({"@type": "Product", "name": "x"}))  # no list: unchanged
+
+
+def test_platform_product_page_without_markup() -> None:
+    # fixje.nl /iphone-12-tempered-glass: WooCommerce product page, no Product JSON-LD
+    woo = '<html><body class="wp-singular single single-product postid-1 woocommerce">x</body>'
+    assert is_platform_product_page(woo) and not is_single_product_page(woo)
+    archive = '<html><body class="archive tax-product_cat woocommerce">x</body></html>'
+    assert not is_platform_product_page(archive)
+    assert is_platform_product_page('<body class="catalog-product-view page-layout-1column">')
+    assert is_platform_product_page('<body class="is-ctl-product is-act-index">')
+    assert not is_platform_product_page("<body>")  # no class
+    assert not is_platform_product_page('<body class="single-product-list">')  # whole token

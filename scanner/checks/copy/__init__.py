@@ -24,20 +24,27 @@ GUIDANCE: dict[str, dict[str, str]] = {
             "Applebot-Extended) may stay blocked; that does not affect being found."
         ),
     },
+    # Signed agents: help.openai.com/en/articles/11845367 (ChatGPT agent signs requests,
+    # RFC 9421 / Web Bot Auth; listed by Cloudflare as a signed agent, by Akamai as AI bot).
     "D2.edge_blocking": {
         "nl": (
             "Je CDN of firewall (bijv. Cloudflare, Akamai) blokkeert of toont een "
             "uitdaging aan AI-zoek- en assistentbots. Sta deze bots toe in je bot-instellingen "
             "(bij Cloudflare: 'Verified bots' toestaan en AI-zoekbots niet blokkeren), zodat "
-            "AI-assistenten je productpagina's kunnen lezen. Laat je hostingpartij of "
-            "platform dit controleren als je de instelling niet zelf beheert."
+            "AI-assistenten je productpagina's kunnen lezen. Sta ook ondertekende agents toe "
+            "(bij Cloudflare: 'Signed agents'; Akamai: categorie AI-bots): agents die namens "
+            "klanten winkelen, zoals ChatGPT agent, identificeren zich met Web Bot "
+            "Auth-handtekeningen. Laat je hostingpartij of platform dit controleren als je de "
+            "instelling niet zelf beheert."
         ),
         "en": (
             "Your CDN or firewall (e.g. Cloudflare, Akamai) blocks or challenges AI search and "
             "assistant bots. Allow these bots in your bot settings (on Cloudflare: allow "
             "'Verified bots' and do not block AI search crawlers) so AI assistants can read "
-            "your product pages. Ask your host or platform to check this if you do not "
-            "manage the setting yourself."
+            "your product pages. Also allow signed agents (on Cloudflare: 'Signed agents'; on "
+            "Akamai: the AI bots category): agents that shop for customers, such as ChatGPT "
+            "agent, identify themselves with Web Bot Auth signatures. Ask your host or "
+            "platform to check this if you do not manage the setting yourself."
         ),
     },
     "D3.sitemap": {
@@ -226,13 +233,16 @@ GUIDANCE: dict[str, dict[str, str]] = {
     },
     "C3.payment_methods": {
         "nl": (
-            "Bied iDEAL (en straks Wero) aan en toon de betaalmethoden duidelijk op een "
+            "Accepteer creditcards (Visa, Mastercard) of Apple Pay / Google Pay én iDEAL (en "
+            "Wero zodra dat het overneemt). AI-agents betalen met kaarttokens; Nederlandse "
+            "klanten verwachten iDEAL. Toon de betaalmethoden duidelijk op een "
             "betaalinformatiepagina of in de footer, zodat agents en klanten ze vooraf zien."
         ),
         "en": (
-            "Offer iDEAL (and Wero as it rolls out) and show payment methods clearly on a "
-            "payment information page or in the footer, so agents and customers see them "
-            "up front."
+            "Accept cards (Visa, Mastercard) or Apple Pay / Google Pay as well as iDEAL (and "
+            "Wero as it takes over). AI agents pay with card tokens; Dutch customers expect "
+            "iDEAL. Show payment methods clearly on a payment information page or in the "
+            "footer, so agents and customers see them up front."
         ),
     },
     "C4.captcha_checkout": {

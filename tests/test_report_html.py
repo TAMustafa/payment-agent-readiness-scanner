@@ -19,11 +19,10 @@ from scanner.models import (
     PlatformInfo,
     ScanOptions,
     ScanReport,
-    VisibilityCall,
-    VisibilityResult,
 )
 from scanner.report.html import MAX_EVIDENCE, render_html
-from scanner.report.scoring import summarise
+from scanner.report.i18n import WHY
+from scanner.report.scoring import IN_SCOPE, summarise
 from tests.conftest import FakeShop
 
 HOSTILE = '<script>alert("x")</script><img src=x onerror=alert(1)>'
@@ -60,11 +59,14 @@ def make_report(results: list[CheckResult], **extra: object) -> ScanReport:
         "requests_made": 12,
         "score": s.score,
         "grade": s.grade,
+        "coverage": s.coverage,
         "excluded_checks": s.excluded_checks,
         "not_run": s.not_run,
-        "categories": s.categories,
+        "stages": s.stages,
+        "out_of_scope": s.out_of_scope,
         "top_fixes": s.top_fixes,
         "results": results,
+        "lang": "nl",  # most assertions below check the Dutch copy; English is the default
         **extra,
     }
     return ScanReport.model_validate(fields)
@@ -76,41 +78,82 @@ def sample_results() -> list[CheckResult]:
         res("D2.edge_blocking", "error", 0.0),
         res("S1.product_jsonld", "pass", 1.0),
         res("S2.offer", "warn", 0.5),
-        res("S5.reviews", "not_applicable", 0.0),
+        res("S3.identifiers", "pass", 1.0),
+        res("S4.shipping_returns", "fail", 0.0),
+        res("C1.add_to_cart", "pass", 1.0),
+        res("C2.guest_checkout", "pass", 1.0),
+        res("S5.reviews", "not_applicable", 0.0),  # out of scope
+        res("S6.organization", "fail", 0.0),  # out of scope
         res("P3.mcp_or_feed_endpoint", "warn", 0.0),
     ]
 
 
-def test_nl_report_has_all_sections() -> None:
+def text_of(html: str) -> str:
+    return re.sub(r"<[^>]+>", " ", html)
+
+
+def test_nl_report_sections_follow_the_agent_order() -> None:
     html = render_html(make_report(sample_results()))
     assert html.startswith("<!doctype html>") and '<html lang="nl">' in html
-    for heading in (
-        "Samenvatting",
-        "Top 3 verbeterpunten",
-        "Wat eraan komt",
-        "Resultaten per check",
-        "Methode en beperkingen",
-    ):
-        assert heading in html, heading
-    assert "Niet klaar" in html  # (0 + 6 + 4 + 0) / 26 = 38.5
-    assert "AI-crawlers toegestaan in robots.txt" in html  # Dutch label
-    assert "Niet uitgevoerd" in html  # V1 and others had no result
+    order = [
+        "<h1>Klaar voor bestellingen via AI-agents?",
+        "<h2>Eerst doen",
+        "<h2>De vier stappen van een agent-bestelling",
+        "<h3>1. Vinden en bereiken",
+        "<h3>2. Begrijpen",
+        "<h3>3. Afrekenen",
+        "<h3>4. Aansluiten",
+        "<h2>Hoe we hebben gemeten",
+    ]
+    positions = [html.index(h) for h in order]
+    assert positions == sorted(positions)
+    assert "Niet klaar" in html  # 27 earned / 51 measured weight = 52.9
+    assert "AI-bots toegestaan in robots.txt" in html  # Dutch label
     assert "Niet te controleren" in html  # D2 error
-    assert "1/5 gemeten" in html  # discovery: only D1 counted (D2 error, rest not run)
+    assert "10 van 19 checks konden we niet meten" in html
+    assert "1/4 gemeten" in html  # access: only D1 counted (D2 error, D3/D4 not run)
+
+
+def test_dropped_sections_are_gone() -> None:
+    html = render_html(make_report(sample_results()))
+    for gone in ("Wat eraan komt", "Opmerkingen bij deze scan", "weegt ", "Samenvatting"):
+        assert gone not in html, gone
+
+
+def test_out_of_scope_checks_are_not_shown() -> None:
+    v1 = res("V1.prompt_visibility", "fail", 0.0)
+    html = render_html(make_report([*sample_results(), v1]))
+    assert "V1." not in html and "Genoemd door AI-assistenten" not in html
+    # discovery checks are back in scope (2026-11-10)
+    assert "Organization / OnlineStore-markup" in html and "S6" in html
+
+
+def test_every_in_scope_check_has_a_why_box() -> None:
+    html = render_html(make_report(sample_results()))
+    assert set(WHY) == set(IN_SCOPE)
+    assert html.count("class='box why'") == len(IN_SCOPE)  # also for unmeasured checks
+    for lang in ("nl", "en"):
+        for check_id in IN_SCOPE:
+            assert WHY[check_id][lang], (check_id, lang)
+
+
+def test_fix_box_only_when_failing_or_warning() -> None:
+    html = render_html(make_report(sample_results()))
+    assert html.count("class='box guide'") == 5  # D1, S2, S4, S6, P3
 
 
 def test_en_fallback_and_guidance_from_copy() -> None:
     html = render_html(make_report(sample_results()), lang="en")
-    assert '<html lang="en">' in html and "Top 3 fixes" in html and "Not ready" in html
+    assert '<html lang="en">' in html and "Do first" in html and "Not ready" in html
     assert "AI crawlers allowed in robots.txt" in html
+    assert "Why it matters" in html
     # guidance is re-read from checks/copy in the report language
     assert "Allow AI search and assistant bots" in html
 
 
 def test_agent_checkout_is_never_claimed_live() -> None:
     for lang in ("nl", "en"):
-        html = render_html(make_report(sample_results()), lang=lang)
-        text = re.sub(r"<[^>]+>", " ", html).lower()
+        text = text_of(render_html(make_report(sample_results()), lang=lang)).lower()
         assert "nog niet beschikbaar" in text or "not yet available" in text
         assert "is live" not in text and "is nu beschikbaar" not in text
 
@@ -139,7 +182,20 @@ def test_evidence_is_capped_with_pointer_to_json() -> None:
     ev = [Evidence(detail=f"line {i}") for i in range(MAX_EVIDENCE + 7)]
     html = render_html(make_report([res("S2.offer", "warn", 0.5, ev)]))
     assert f"line {MAX_EVIDENCE - 1}" in html and f"line {MAX_EVIDENCE}<" not in html
-    assert "7 regels meer in report.json" in html
+    assert "+ 7 regels in report.json" in html
+
+
+def test_unmeasured_check_shows_one_evidence_line() -> None:
+    ev = [Evidence(detail="first reason"), Evidence(detail="second line")]
+    html = render_html(make_report([res("C1.add_to_cart", "not_applicable", 0.0, ev)]))
+    assert "first reason" in html and "second line" not in html
+
+
+def test_low_coverage_report_says_so() -> None:
+    rs = [res("D1.robots_ai_crawlers", "pass", 1.0), res("C5.policies_clear", "pass", 1.0)]
+    html = render_html(make_report(rs))
+    assert "Te weinig gemeten voor een oordeel" in html and "voorlopig" in html
+    assert "Klaar" not in text_of(html).replace("Klaar voor bestellingen", "")
 
 
 def test_no_score_report_renders() -> None:
@@ -147,19 +203,11 @@ def test_no_score_report_renders() -> None:
     assert "Geen score" in html
 
 
-def test_methodology_reflects_what_ran() -> None:
-    vis = VisibilityResult(
-        ran=True,
-        calls=[
-            VisibilityCall(assistant=a, model="m", run=r, kind="brand", prompt="q")
-            for a in ("ChatGPT", "Gemini")
-            for r in (1, 2)
-        ],
-    )
-    on = render_html(make_report(sample_results(), checkout_tested=True, visibility=vis))
-    assert "ChatGPT en Gemini" in on and "2x" in on and "anonieme winkelwagen" in on
+def test_methodology_reflects_checkout_test() -> None:
+    on = render_html(make_report(sample_results(), checkout_tested=True))
+    assert "anonieme winkelwagen" in on
     off = render_html(make_report(sample_results()))
-    assert "niet gemeten" in off and "alleen met toestemming" in off
+    assert "alleen met jouw toestemming" in off
 
 
 def test_brand_is_configurable() -> None:
@@ -174,21 +222,22 @@ async def test_graph_fills_score_grade_and_fixes() -> None:
     expected = summarise(report.results)
     assert report.score == expected.score and report.grade == expected.grade
     assert report.top_fixes == expected.top_fixes
-    assert report.not_run == ["V1.prompt_visibility"]
-    assert len(report.categories) == 5
+    assert report.not_run == []  # V1 is out of scope, so never "not run"
+    assert report.out_of_scope == []  # V1 only runs with --visibility
+    assert [s.stage for s in report.stages] == ["access", "product_data", "checkout", "protocols"]
     assert render_html(report).endswith("</html>")
 
 
-def test_cli_report_rerenders_saved_json(tmp_path: Path) -> None:
+def test_cli_report_rescores_saved_json(tmp_path: Path) -> None:
     old = make_report(sample_results()).model_copy(
-        update={"score": None, "grade": None, "top_fixes": [], "categories": []}
-    )  # as written before build step 4
+        update={"score": 12.0, "grade": None, "top_fixes": [], "stages": []}
+    )  # as scored by an older version
     path = tmp_path / "report.json"
     path.write_text(old.model_dump_json(), encoding="utf-8")
     out = CliRunner().invoke(app, ["report", str(path), "--lang", "en"])
     assert out.exit_code == 0, out.output
     html = (tmp_path / "report.html").read_text(encoding="utf-8")
-    assert "Not ready" in html and "Top 3 fixes" in html
+    assert "52.9" in html and "Not ready" in html and "Do first" in html
 
 
 def test_cli_rejects_unknown_lang(tmp_path: Path) -> None:
@@ -206,3 +255,11 @@ def test_every_check_has_a_label_and_guidance(lang: str) -> None:
     assert set(LABEL_NL) == set(REGISTRY)
     for check_id in REGISTRY:
         assert get_guidance(check_id, lang), check_id  # type: ignore[arg-type]
+
+
+def test_english_is_the_default_language() -> None:
+    assert ScanOptions().lang == "en"
+    report = make_report(sample_results()).model_copy(update={"lang": "en"})
+    html = render_html(report)
+    assert '<html lang="en">' in html and "Ready for AI agent orders?" in html
+    assert "Why it matters" in html and "How to fix" in html
