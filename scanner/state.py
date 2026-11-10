@@ -19,6 +19,7 @@ from scanner.models import (
     SiteBasics,
     VisibilityResult,
 )
+from scanner.report.scoring import ScoreSummary
 
 
 class ScanState(TypedDict):
@@ -37,8 +38,7 @@ class ScanState(TypedDict):
     visibility: NotRequired[VisibilityResult]
     # parallel check results are merged by list concatenation
     results: Annotated[list[CheckResult], operator.add]
-    score: NotRequired[float | None]
-    excluded_checks: NotRequired[int]
+    scoring: NotRequired[ScoreSummary]
     report: NotRequired[ScanReport]
 
 

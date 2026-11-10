@@ -13,6 +13,9 @@ import typer
 
 from scanner.graph import build_graph, run_scan
 from scanner.models import ScanOptions, ScanReport
+from scanner.report.html import DEFAULT_BRAND, render_html
+from scanner.report.i18n import Lang
+from scanner.report.scoring import summarise
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
@@ -61,6 +64,7 @@ def scan(
             "Only for shops you have permission to test. robots.txt is still respected.",
         ),
     ] = False,
+    lang: Annotated[str, typer.Option("--lang", help="Report language: nl (default) or en")] = "nl",
     checkout_consent: Annotated[
         bool,
         typer.Option(
@@ -70,7 +74,8 @@ def scan(
         ),
     ] = False,
 ) -> None:
-    """Scan a shop and print or save the report."""
+    """Scan a shop and print or save the report (report.json + report.html with --out)."""
+    report_lang = _lang(lang)
     if os.environ.get("SCANNER_CONTACT_URL") is None:
         typer.echo(
             "Warning: SCANNER_CONTACT_URL is not set; shops see a placeholder contact URL in "
@@ -92,6 +97,7 @@ def scan(
         checkout=checkout or checkout_consent,
         checkout_consent=checkout_consent,
         artifacts_dir=str(artifacts) if artifacts else None,
+        lang=report_lang,
     )
     try:
         report = asyncio.run(asyncio.wait_for(run_scan(url, options), timeout=timeout))
@@ -104,11 +110,43 @@ def scan(
 
     if artifacts is not None:
         path = _write_report(report, artifacts)
-        typer.echo(f"Wrote {path}", err=True)
+        typer.echo(f"Wrote {path} and report.html", err=True)
     if as_json:
         typer.echo(report.model_dump_json(indent=2))
     else:
         _print_summary(report)
+
+
+@app.command()
+def report(
+    report_json: Annotated[Path, typer.Argument(help="A saved report.json")],
+    lang: Annotated[
+        str | None, typer.Option("--lang", help="nl or en (default: the scan's language)")
+    ] = None,
+    out: Annotated[
+        Path | None, typer.Option("--out", help="HTML file (default: report.html next to it)")
+    ] = None,
+) -> None:
+    """Re-render report.html from a saved report.json (no network access)."""
+    saved = ScanReport.model_validate_json(report_json.read_text(encoding="utf-8"))
+    if saved.grade is None and saved.score is None and saved.results:
+        # Reports from before build step 4 have no score yet: compute it now.
+        s = summarise(saved.results)
+        saved = saved.model_copy(
+            update={
+                "score": s.score,
+                "grade": s.grade,
+                "excluded_checks": s.excluded_checks,
+                "not_run": s.not_run,
+                "categories": s.categories,
+                "top_fixes": s.top_fixes,
+            }
+        )
+    target = out or report_json.with_name("report.html")
+    target.write_text(
+        render_html(saved, lang=_lang(lang) if lang else None, brand=_brand()), encoding="utf-8"
+    )
+    typer.echo(f"Wrote {target}", err=True)
 
 
 @app.command()
@@ -117,15 +155,30 @@ def graph() -> None:
     typer.echo(build_graph().get_graph().draw_mermaid())
 
 
+def _lang(value: str) -> Lang:
+    if value not in ("nl", "en"):
+        raise typer.BadParameter("--lang must be nl or en")
+    return "nl" if value == "nl" else "en"
+
+
+def _brand() -> str:
+    # Service name for the report header is still open (SPEC §9): configurable meanwhile.
+    return os.environ.get("SCANNER_BRAND", "").strip() or DEFAULT_BRAND
+
+
 def _write_report(report: ScanReport, target: Path) -> Path:
     target.mkdir(parents=True, exist_ok=True)
     path = target / "report.json"
     path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    (target / "report.html").write_text(render_html(report, brand=_brand()), encoding="utf-8")
     return path
 
 
 def _print_summary(report: ScanReport) -> None:
-    typer.echo(f"{report.origin}  platform={report.platform.platform}  score={report.score}")
+    typer.echo(
+        f"{report.origin}  platform={report.platform.platform}  score={report.score}  "
+        f"grade={report.grade}"
+    )
     for sig in report.platform.signals[:3]:
         typer.echo(f"  platform signal: {sig.detail}")
     counts = {k: len(v) for k, v in report.sampled.items()}
@@ -135,4 +188,6 @@ def _print_summary(report: ScanReport) -> None:
     for r in report.results:
         detail = r.evidence[0].detail if r.evidence else ""
         typer.echo(f"  {r.status:<14} {r.id:<26} {detail}")
-    typer.echo(f"excluded checks: {report.excluded_checks}")
+    typer.echo(f"excluded checks: {report.excluded_checks}  not run: {len(report.not_run)}")
+    for f in report.top_fixes:
+        typer.echo(f"  fix {f.rank}: {f.check_id:<26} +{f.score_gain} points, effort {f.effort}")

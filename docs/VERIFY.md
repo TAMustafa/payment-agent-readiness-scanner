@@ -197,3 +197,32 @@ it matched the real USD 0.60 billed before this run.
 
 Month to date after both runs: USD 1.76 of USD 10 (ledger = old key 0.60 + new key 1.16).
 V1 is verified live end-to-end. Disputed results: 0.
+
+### 2026-11-10 — Build step 4: scoring, top 5 fixes, NL/EN HTML report
+
+Built `scanner/report/` (scoring.py, html.py, i18n.py); `nodes.score` is no longer a stub.
+`report.html` is written next to `report.json` with `--out`; `scanner report <report.json>
+[--lang en]` re-renders offline (also scores reports saved before step 4). HTML is built with
+the stdlib (`html.escape`), so no new dependency (Jinja2 not needed). 264 tests green
+(+14 scoring, +14 HTML: escaping of hostile evidence, no external resources, NL/EN, "agent
+checkout not yet available" copy, CLI).
+
+Scoring choices (SPEC §5; my reading, please confirm):
+- Checks with no result (V1 without `--visibility`, or deselected) are "not run", excluded
+  from the score like `not_applicable`/`error`, and listed in the summary.
+- A `warn` with full credit (D1: only training bots blocked) is not a fix.
+- Fix "+N points" = exact rise of the 0–100 score when fixed, after re-normalisation.
+- Each category bar shows "n/m measured", so e.g. checkout "100" on 2 of 5 checks is not
+  read as a full checkout pass.
+
+| Date | Shop | Result | Manual check |
+|---|---|---|---|
+| 2026-11-10 | duifhuizen.nl (shopware6), static scan, no probe, no V1 | **78.9 Partly ready**; 14 counted, 5 excluded, V1 not run; 24 requests, 1× 429 | Score recomputed by hand from report.json: 78.9 over 71 scorable weight ✔. Fix order S4 (2.5), P1 (1.67), S1 (0.75), P2 (0.75), P3 (0.67) matches the formula ✔. S4 fail confirmed with curl: product page has Product/Offer microdata, no shippingDetails / hasMerchantReturnPolicy ✔. HTML checked in a browser at desktop and 375 px (no horizontal scroll; fixed narrow-screen bar layout). |
+| 2026-11-10 | thuisbezorgd.nl (saved 2026-11-09 V1 run, re-rendered offline) | D1 + V1 only → score computed from saved JSON | Renders; V1 method note names the assistants and run count from the data. |
+
+Found while verifying (not fixed, pre-existing): P3 on duifhuizen reports `warn` while
+`llms.txt` answered 429 — the UCP/ai-catalog 404s make `warn` correct, but the llms.txt part
+was not actually verified. Low impact (weight 2, never `fail`).
+
+**Not verified yet:** report understood by a real merchant (SPEC §1); a full report with
+checkout probe + V1 on one shop (both need approval / cost money); EN copy reviewed by Tarek.

@@ -1,7 +1,7 @@
 """Graph nodes. Each is an async function returning a partial ScanState update.
 
-Skeleton: network/sampling/scoring nodes are stubs that return empty-but-valid data.
-They will delegate to scanner.fetch / sampling / platform / report as those are built.
+Nodes stay thin and delegate to scanner.fetch / sampling / platform / checkout /
+visibility / report.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from scanner.models import (
     SiteBasics,
 )
 from scanner.platform.fingerprint import fingerprint
+from scanner.report.scoring import summarise
 from scanner.sampling.select import sample
 from scanner.sampling.sitemap import collect_sitemaps
 from scanner.state import RunCheckInput, ScanState
@@ -261,14 +262,14 @@ async def visibility(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
 
 
 async def score(state: ScanState) -> Update:
-    # STUB (build step 4): weighted, re-normalised score per SPEC.md section 5.
-    excluded = sum(r.status in ("not_applicable", "error") for r in state["results"])
-    return {"score": None, "excluded_checks": excluded}
+    """Weighted, re-normalised score, grade, category scores and top 5 fixes (SPEC §5)."""
+    return {"scoring": summarise(state["results"])}
 
 
 async def render_report(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
     pages = state["pages"]
-    # Builds the validated ScanReport; HTML rendering arrives in build step 4.
+    scoring = state.get("scoring") or summarise(state["results"])
+    # Builds the validated ScanReport; the CLI renders report.html from it (scanner.report).
     report = ScanReport(
         scanner_version=__version__,
         url=state["url"],
@@ -292,9 +293,14 @@ async def render_report(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
             else []
         ),
         requests_made=runtime.context.client.requests_made,
-        score=state.get("score"),
-        grade=None,
-        excluded_checks=state.get("excluded_checks", 0),
+        score=scoring.score,
+        grade=scoring.grade,
+        excluded_checks=scoring.excluded_checks,
+        not_run=scoring.not_run,
+        categories=scoring.categories,
+        top_fixes=scoring.top_fixes,
+        lang=state["options"].lang,
+        checkout_tested=state.get("checkout", CheckoutProbe()).ran,
         results=sorted(state["results"], key=lambda r: r.id),
         visibility=state.get("visibility"),
     )

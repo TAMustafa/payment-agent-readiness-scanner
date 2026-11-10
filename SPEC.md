@@ -160,7 +160,7 @@ Magento), ideally in the chosen niche. Record them in `docs/VERIFY.md` with the 
 Do not hard-code them in source.
 
 ## 8. Build steps
-Status 2026-11-09: steps 1–3 **done** (see `docs/VERIFY.md`); step 4 next.
+Status 2026-11-10: steps 1–4 **done** (see `docs/VERIFY.md`); pilots next.
 
 1. **CLI + static checks** *(done)*: project setup (uv, LangGraph skeleton graph with stub nodes first), fetch layer, robots, sitemap, sampling,
    platform fingerprint, D1–D4, S1–S6, P1–P3, JSON output. Verify on fixtures + 5 shops.
@@ -168,7 +168,8 @@ Status 2026-11-09: steps 1–3 **done** (see `docs/VERIFY.md`); step 4 next.
    (`--checkout` / `--checkout-consent`), hard safety guards (`docs/SAFETY.md`).
 3. **AI visibility** *(done 2026-11-09; verified live)*: V1 behind flag, cost logging,
    raw response storage. Via OpenRouter, hard budget caps (`docs/SAFETY.md`).
-4. **Report**: scoring, top 5 fixes, NL/EN HTML report.
+4. **Report** *(done 2026-11-10)*: scoring, top 5 fixes, NL/EN HTML report
+   (`scanner report` re-renders a saved report.json).
 5. **Web front-end** (only after pilots): URL form → queued scan → report link.
 
 Each step ends with: tests green, VERIFY.md updated, short summary of what's verified,
@@ -179,7 +180,10 @@ how, and what is not.
 - ~~Which assistants/APIs and monthly budget~~ — OpenRouter, ChatGPT + Gemini, EUR 10/month
   (2026-11-09); 2 runs, plain httpx client (approved 2026-11-09)
 - (added 2026-11-09) V1 status thresholds: pass ≥ 60 % mentions, warn ≥ 30 % (initial choice)
-- Brand name of the service for report header
+- Brand name of the service for report header (meanwhile `SCANNER_BRAND`, default
+  "Agent-Ready Scan")
+- (added 2026-11-10) Scoring reading: checks not run are excluded like not_applicable;
+  "+N points" per fix is the re-normalised score gain
 - ~~V1 prompt generation~~ — fixed templates (2026-11-09)
 - (added 2026-11-08) Effort sizes S/M/L per check (initial estimates in `registry.py`)
 - (added 2026-11-08) D5 thresholds: ≤ 5 % disapproved = pass, ≤ 20 % = warn (initial choice)

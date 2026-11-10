@@ -22,7 +22,9 @@ implementing any check.
 - **Step 3 (V1 AI visibility): built and verified live (2026-11-09)**, 232 tests green.
   Measured ≈ USD 1.15 per full scan (approved), ≈ 8 scans/month. Remaining items: top of
   **`docs/NEXT_STEP.md`**; details in `docs/VERIFY.md`. Settings: `config/visibility.toml`.
-- **Then:** build step 4 (scoring + HTML report; `nodes.score` is still a stub).
+- **Step 4 (scoring + NL/EN HTML report): built and verified (2026-11-10)**, 264 tests green.
+  `scanner/report/`; open points at the end of `docs/VERIFY.md` (merchant test, brand name).
+- **Then:** pilots with real merchants; step 5 (web front-end) only after pilots.
 - **Logs:** `docs/VERIFY.md` (reference shops, every verification run, known limits),
   `docs/SAFETY.md` (what the scanner can never do to a shop, and the tests that prove it).
 - **Repo:** github.com/TAMustafa/payment-agent-readiness-scanner, branch `main`. Tarek commits
@@ -113,7 +115,8 @@ scanner/
                     # POST in the codebase, pinned to openrouter.ai), ledger.py (monthly
                     # costs), parse.py (mentions/citations), graph.py (LangGraph subgraph +
                     # budget guards); settings: config/visibility.toml
-  report/           # scoring + HTML — NOT YET BUILT (step 4)
+  report/           # scoring.py (SPEC §5 score, grade, categories, top 5 fixes),
+                    # html.py (self-contained printable HTML, stdlib only), i18n.py (NL/EN)
 tests/
   fixtures/         # robots, sitemaps, home/product pages per platform, UCP profile
   test_safety.py    # never-pay/never-type guarantees (AST scan, guard table, hostile shops,
@@ -129,7 +132,7 @@ START -> normalise_url -> fetch_basics (robots, home, sitemaps)
       -> probe_user_agents (D2 data) -> checkout_probe (opt-in Playwright; C1-C4, D4 render)
       -> [fan-out via Send] run_check (one per enabled check id, incl. C1-C5)
       -> visibility (only with --visibility: V1 subgraph plan -> budget_check -> Send(ask))
-      -> score (stub, step 4)
+      -> score (scanner.report.scoring)
       -> render_report -> END
 ```
 - Data collection happens in network nodes **before** the fan-out; checks only read
@@ -189,10 +192,12 @@ guessed `fail`); nothing to test → `not_applicable`; emerging standards (P3) �
 
 ## Commands
 - `uv sync` then `uv run playwright install chromium`
-- `uv run scanner scan https://example.nl --out scans/` (report.json + screenshots)
+- `uv run scanner scan https://example.nl --out scans/` (report.json + report.html +
+  screenshots; `--lang en` for English)
+- `uv run scanner report scans/<host>/<ts>/report.json [--lang en]` (re-render HTML offline)
 - `uv run scanner scan https://example.nl --checks D,S --json`
 - `uv run scanner graph` (Mermaid of the pipeline)
 - `uv run ruff check . && uv run mypy scanner`
 - `uv run --env-file .env scanner scan https://example.nl --visibility --out scans/` (V1, paid)
-- `uv run pytest` (≈12 s, 230 tests; probe tests drive real headless Chromium against fake
+- `uv run pytest` (≈12 s, 264 tests; probe tests drive real headless Chromium against fake
   shops; V1 tests use a fake OpenRouter — no paid calls)

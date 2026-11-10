@@ -1,3 +1,11 @@
+# Next step
+
+> **Status 2026-11-10: build step 4 (scoring + NL/EN HTML report) done and verified** on
+> duifhuizen.nl (see `docs/VERIFY.md`). Next: confirm open choices with Tarek (brand name,
+> effort sizes, scoring reading), test the report with 1 real merchant (SPEC §1), and one
+> full report with `--checkout` + `--visibility` on an approved shop (costs ≈ USD 1.15).
+> The hand-off notes for step 3 below are kept for reference.
+
 # Next step: build step 3 — AI visibility (V1)
 
 > **Status 2026-11-09: V1 built and verified live** (2 runs on thuisbezorgd.nl; 4 issues

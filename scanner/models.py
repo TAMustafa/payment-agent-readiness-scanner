@@ -243,6 +243,31 @@ class VisibilityResult(BaseModel):
     monthly_cap_usd: float = 0.0
 
 
+class CategoryScore(BaseModel):
+    """Score per category (SPEC §5), re-normalised over the category's scorable checks."""
+
+    category: Category
+    score: float | None  # 0..100; None = nothing scorable in this category
+    earned: float  # sum of weight x score_fraction
+    scorable_weight: int  # weight of checks not excluded
+    total_weight: int  # catalogue weight of the category
+    excluded: list[str] = Field(default_factory=list)  # ids not_applicable / error / not run
+
+
+class Fix(BaseModel):
+    """One of the top fixes: (weight x (1 - score_fraction)) / effort factor (SPEC §5)."""
+
+    rank: int
+    check_id: str
+    label: str
+    status: CheckStatus
+    priority: float
+    points_available: float  # weight x (1 - score_fraction)
+    score_gain: float  # points the 0..100 score rises when fixed fully (re-normalised)
+    effort: Effort
+    guidance: str
+
+
 class ScanReport(BaseModel):
     scanner_version: str
     url: str
@@ -253,8 +278,13 @@ class ScanReport(BaseModel):
     sampled: dict[str, list[str]] = Field(default_factory=dict)  # kind -> page URLs
     sampling_notes: list[Evidence] = Field(default_factory=list)
     requests_made: int = 0
-    score: float | None  # None until scoring is implemented / nothing scorable
+    score: float | None  # 0..100, None when nothing was scorable
     grade: Grade | None
-    excluded_checks: int
+    excluded_checks: int  # results not_applicable / error (not counted in the score)
+    not_run: list[str] = Field(default_factory=list)  # catalogue ids with no result at all
+    categories: list[CategoryScore] = Field(default_factory=list)
+    top_fixes: list[Fix] = Field(default_factory=list)
+    lang: Literal["nl", "en"] = "nl"
+    checkout_tested: bool = False  # the opt-in Playwright probe ran (methodology note)
     results: list[CheckResult]
     visibility: VisibilityResult | None = None
