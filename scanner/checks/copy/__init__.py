@@ -77,12 +77,12 @@ GUIDANCE: dict[str, dict[str, str]] = {
         "nl": (
             "Voeg op elke productpagina gestructureerde data toe als JSON-LD "
             "(schema.org Product) met minimaal name, image en description. Microdata werkt ook, "
-            "maar Google raadt JSON-LD aan en AI-agents lezen het het betrouwbaarst."
+            "maar Google raadt JSON-LD aan."
         ),
         "en": (
             "Add structured data as JSON-LD (schema.org Product) to every product page, with "
             "at least name, image and description. Microdata also works, but Google recommends "
-            "JSON-LD and AI agents read it most reliably."
+            "JSON-LD."
         ),
     },
     "S2.offer": {
@@ -158,38 +158,40 @@ GUIDANCE: dict[str, dict[str, str]] = {
     "D5.merchant_center": {
         "nl": (
             "Zorg voor een actieve Google Merchant Center-feed met zo min mogelijk afgekeurde "
-            "producten. Google AI Mode en Gemini gebruiken deze productgegevens; afgekeurde "
-            "producten worden daar niet getoond."
+            "producten. Google AI Mode en Gemini gebruiken deze productgegevens en Google's "
+            "agent-checkout (UCP) is erop gebouwd; afgekeurde producten worden niet getoond."
         ),
         "en": (
             "Keep an active Google Merchant Center feed with as few disapproved products as "
-            "possible. Google AI Mode and Gemini use this product data; disapproved products "
-            "are not shown there."
+            "possible. Google AI Mode and Gemini use this product data and Google's agent "
+            "checkout (UCP) is built on it; disapproved products are not shown."
         ),
     },
     "P1.ucp_profile": {
         "nl": (
             "Publiceer een UCP-profiel (Universal Commerce Protocol) op /.well-known/ucp. "
-            "Afrekenen via AI-agents is in Nederland nog niet live; met een geldig profiel ben "
-            "je klaar zodra het wel live gaat. Op Shopify gebeurt dit automatisch voor winkels "
-            "die in aanmerking komen; op andere platformen via een plugin of maatwerk."
+            "Afrekenen binnen AI-assistenten is in Nederland nog niet live; met een geldig profiel "
+            "ben je klaar zodra het wel live gaat. Op Shopify gebeurt dit automatisch voor "
+            "winkels die in aanmerking komen, voor Shopware is er een officiële plugin; op "
+            "andere platformen via een plugin of maatwerk."
         ),
         "en": (
-            "Publish a UCP (Universal Commerce Protocol) profile at /.well-known/ucp. Agent "
-            "checkout is not live in the Netherlands yet; a valid profile means you are ready "
-            "when it launches. Shopify does this automatically for eligible stores; other "
-            "platforms need a plugin or custom work."
+            "Publish a UCP (Universal Commerce Protocol) profile at /.well-known/ucp. Checkout "
+            "inside AI assistants is not live in the Netherlands yet; a valid profile means you "
+            "are ready when it launches. Shopify does this automatically for eligible stores and "
+            "Shopware has an official plugin; other platforms need a plugin or custom work."
         ),
     },
     "P2.platform_support": {
         "nl": (
             "Je platform biedt een route naar agent-commerce die nog niet aanstaat. Afrekenen "
-            "via AI-agents is in Nederland nog niet live; zet het kanaal klaar (en test eerst "
-            "op staging) zodat je direct mee kunt doen bij de lancering."
+            "binnen AI-assistenten is in Nederland nog niet live; zet het kanaal klaar (en "
+            "test eerst op staging) zodat je direct mee kunt doen bij de lancering."
         ),
         "en": (
             "Your platform offers a route to agentic commerce that is not switched on yet. "
-            "Agent checkout is not live in the Netherlands yet; prepare the channel (test on "
+            "Checkout inside AI assistants is not live in the Netherlands yet; prepare the "
+            "channel (test on "
             "staging first) so you can join as soon as it launches."
         ),
     },
@@ -211,14 +213,14 @@ GUIDANCE: dict[str, dict[str, str]] = {
         "nl": (
             "Een browser-agent kon niet (zonder hindernissen) een product in de winkelwagen "
             "leggen. Zorg dat 'In winkelwagen' werkt zonder bot-uitdaging of captcha en beperk "
-            "pop-ups tot de cookiemelding. Agent-checkout is in Nederland nog niet live; dit "
-            "meet hoe klaar je gewone checkout is voor browser-agents."
+            "pop-ups tot de cookiemelding. Browser-agents bestellen via je eigen checkout; dit "
+            "meet hoe klaar die daarvoor is."
         ),
         "en": (
             "A browser agent could not add a product to the cart (without obstacles). Make "
             "'Add to cart' work without bot challenges or captchas and keep pop-ups to the "
-            "cookie notice. Agent checkout is not live in the Netherlands yet; this measures "
-            "how ready your normal checkout is for browser agents."
+            "cookie notice. Browser agents order through your own checkout; this measures how "
+            "ready it is for them."
         ),
     },
     "C2.guest_checkout": {
@@ -248,12 +250,13 @@ GUIDANCE: dict[str, dict[str, str]] = {
     "C4.captcha_checkout": {
         "nl": (
             "Er staat een captcha bij het begin van de checkout. Die houdt ook legitieme "
-            "browser-agents tegen. Gebruik onzichtbare botbescherming of zet de captcha pas "
-            "bij verdacht gedrag in."
+            "browser-agents tegen. Laat geverifieerde, ondertekende agents door (bijv. "
+            "Cloudflare 'Signed agents') en zet de captcha alleen in bij verdacht gedrag."
         ),
         "en": (
             "There is a captcha at checkout entry. It also stops legitimate browser agents. "
-            "Use invisible bot protection or only show the captcha on suspicious behaviour."
+            "Let verified, signed agents through (e.g. Cloudflare 'Signed agents') and only show "
+            "the captcha on suspicious behaviour."
         ),
     },
     "C5.policies_clear": {

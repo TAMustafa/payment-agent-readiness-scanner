@@ -12,7 +12,7 @@ import json
 from scanner.checks.base import result
 from scanner.checks.p1_ucp import validate
 from scanner.models import CheckResult, Evidence, ScanContext
-from scanner.platform.support import SUPPORT
+from scanner.platform.support import DISPLAY_NAME, SUPPORT
 
 CHECK_ID = "P2.platform_support"
 
@@ -46,7 +46,7 @@ async def check(ctx: ScanContext) -> CheckResult:
 
     note = row.note_nl if ctx.options.lang == "nl" else row.note_en
     src = Evidence(
-        detail=f"{plat}: {row.channel} ({row.level}). {note}",
+        detail=f"{DISPLAY_NAME.get(plat, plat)}: {row.channel}. {note}",
         snippet=f"Sources (verified {row.verified}): " + (", ".join(row.sources) or "none"),
     )
     if live:

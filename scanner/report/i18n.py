@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from typing import Literal
 
+from scanner.platform.support import DISPLAY_NAME
+
 Lang = Literal["nl", "en"]
 
 UI: dict[str, dict[Lang, str]] = {
-    "title": {"nl": "Klaar voor bestellingen via AI-agents?", "en": "Ready for AI agent orders?"},
+    "title": {"nl": "Klaar voor AI-shoppingagents?", "en": "Ready for AI shopping agents?"},
     "scanned": {"nl": "Gescand op", "en": "Scanned on"},
     "platform": {"nl": "Platform", "en": "Platform"},
     "intro": {
@@ -68,9 +70,10 @@ UI: dict[str, dict[Lang, str]] = {
     "how_to_fix": {"nl": "Zo los je het op", "en": "How to fix"},
     "found": {"nl": "Wat we zagen", "en": "What we saw"},
     "more_evidence": {
-        "nl": "+ {n} regels in report.json",
-        "en": "+ {n} lines in report.json",
+        "nl": "+ {n} bevindingen meer in de technische bijlage",
+        "en": "+ {n} more findings in the technical appendix",
     },
+    "not_measured_why": {"nl": "Waarom niet gemeten", "en": "Why not measured"},
     "method": {"nl": "Hoe we hebben gemeten", "en": "How we measured"},
     "m_readonly": {
         "nl": "Alleen-lezen: we hebben niets ingevuld, geen account aangemaakt, niets besteld "
@@ -98,11 +101,109 @@ UI: dict[str, dict[Lang, str]] = {
         "en": "We test bot access with each AI bot's User-Agent plus our own name; real bots "
         "may be treated differently by your CDN.",
     },
+    "m_snapshot": {
+        "nl": "Dit is een momentopname van {date}: de resultaten gelden voor de pagina's die we "
+        "toen bekeken. Wijzigingen in je shop daarna zijn niet meegenomen.",
+        "en": "This is a snapshot from {date}: results apply to the pages we looked at then. "
+        "Changes to your shop after that date are not included.",
+    },
     "footer": {
-        "nl": "{brand} {version} · volledige technische gegevens in report.json",
-        "en": "{brand} {version} · full technical data in report.json",
+        "nl": "{brand} {version} · technische bijlage op aanvraag",
+        "en": "{brand} {version} · technical appendix available on request",
     },
 }
+
+# Plain-language reasons for checks we could not measure, matched on the operator evidence
+# (report.json keeps the technical wording). First match wins.
+UNMEASURED: tuple[tuple[str, dict[Lang, str]], ...] = (
+    (
+        "checkout probe not enabled",
+        {
+            "nl": "De checkout-test doen we alleen met jouw toestemming. Laat het ons weten als "
+            "we deze stap mogen testen.",
+            "en": "We only run the checkout test with your permission. Let us know if we may "
+            "test this step.",
+        },
+    ),
+    (
+        "robots.txt disallows",
+        {
+            "nl": "Je robots.txt vraagt automatische bezoekers dit deel van de shop over te "
+            "slaan, dus we hebben het niet getest. Met jouw toestemming kan dat wel.",
+            "en": "Your robots.txt asks automated visitors to skip this part of the shop, so we "
+            "did not test it. With your permission we can.",
+        },
+    ),
+    (
+        "No Merchant Center input",
+        {
+            "nl": "Hiervoor hebben we gegevens uit je Google Merchant Center nodig: is je feed "
+            "actief en welk deel van je producten is afgekeurd?",
+            "en": "This needs data from your Google Merchant Center: is your feed active and "
+            "what share of your products is disapproved?",
+        },
+    ),
+    (
+        "No product pages could be sampled",
+        {
+            "nl": "We konden in deze scan geen productpagina's lezen, vaak omdat de shop ons "
+            "afremde. Een nieuwe scan geeft meestal wel resultaat.",
+            "en": "We could not read any product pages in this scan, often because the shop "
+            "slowed us down. A new scan usually works.",
+        },
+    ),
+    (
+        "no product page sampled",
+        {
+            "nl": "Zonder productpagina kon de checkout-test niet starten.",
+            "en": "Without a product page the checkout test could not start.",
+        },
+    ),
+    (
+        "Probe could not reach this step",
+        {
+            "nl": "Onze checkout-test kwam niet voorbij deze stap op je site, dus dit konden "
+            "we niet meten.",
+            "en": "Our checkout test could not get past this step on your site, so we could "
+            "not measure it.",
+        },
+    ),
+    (
+        "429",
+        {
+            "nl": "Je shop remde onze scan af (rate limiting), dus dit konden we deze keer niet "
+            "meten.",
+            "en": "Your shop slowed down our scan (rate limiting), so we could not measure "
+            "this time.",
+        },
+    ),
+    (
+        "rate limit",
+        {
+            "nl": "Je shop remde onze scan af (rate limiting), dus dit konden we deze keer niet "
+            "meten.",
+            "en": "Your shop slowed down our scan (rate limiting), so we could not measure "
+            "this time.",
+        },
+    ),
+    (
+        "Chromium",
+        {
+            "nl": "Door een technisch probleem aan onze kant kon deze test niet draaien.",
+            "en": "A technical problem on our side prevented this test.",
+        },
+    ),
+    (
+        "playwright",
+        {
+            "nl": "Door een technisch probleem aan onze kant kon deze test niet draaien.",
+            "en": "A technical problem on our side prevented this test.",
+        },
+    ),
+)
+
+PLATFORM_NAME = DISPLAY_NAME
+PLATFORM_OTHER: dict[Lang, str] = {"nl": "eigen of ander platform", "en": "custom or other"}
 
 GRADE: dict[str, dict[Lang, str]] = {
     "Ready": {"nl": "Klaar", "en": "Ready"},

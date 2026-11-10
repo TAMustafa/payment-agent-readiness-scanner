@@ -96,7 +96,7 @@ def test_nl_report_sections_follow_the_agent_order() -> None:
     html = render_html(make_report(sample_results()))
     assert html.startswith("<!doctype html>") and '<html lang="nl">' in html
     order = [
-        "<h1>Klaar voor bestellingen via AI-agents?",
+        "<h1>Klaar voor AI-shoppingagents?",
         "<h2>Eerst doen",
         "<h2>De vier stappen van een agent-bestelling",
         "<h3>1. Vinden en bereiken",
@@ -182,7 +182,8 @@ def test_evidence_is_capped_with_pointer_to_json() -> None:
     ev = [Evidence(detail=f"line {i}") for i in range(MAX_EVIDENCE + 7)]
     html = render_html(make_report([res("S2.offer", "warn", 0.5, ev)]))
     assert f"line {MAX_EVIDENCE - 1}" in html and f"line {MAX_EVIDENCE}<" not in html
-    assert "+ 7 regels in report.json" in html
+    assert "+ 7 bevindingen meer in de technische bijlage" in html
+    assert "report.json" not in html  # customers do not get the JSON file
 
 
 def test_unmeasured_check_shows_one_evidence_line() -> None:
@@ -195,7 +196,7 @@ def test_low_coverage_report_says_so() -> None:
     rs = [res("D1.robots_ai_crawlers", "pass", 1.0), res("C5.policies_clear", "pass", 1.0)]
     html = render_html(make_report(rs))
     assert "Te weinig gemeten voor een oordeel" in html and "voorlopig" in html
-    assert "Klaar" not in text_of(html).replace("Klaar voor bestellingen", "")
+    assert "Klaar" not in text_of(html).replace("Klaar voor AI-shoppingagents", "")
 
 
 def test_no_score_report_renders() -> None:
@@ -261,5 +262,51 @@ def test_english_is_the_default_language() -> None:
     assert ScanOptions().lang == "en"
     report = make_report(sample_results()).model_copy(update={"lang": "en"})
     html = render_html(report)
-    assert '<html lang="en">' in html and "Ready for AI agent orders?" in html
+    assert '<html lang="en">' in html and "Ready for AI shopping agents?" in html
     assert "Why it matters" in html and "How to fix" in html
+
+
+def test_unmeasured_checks_get_plain_language_reasons() -> None:
+    probe_off = Evidence(
+        detail="Not tested: checkout probe not enabled (opt-in: --checkout when you have "
+        "permission to test this shop, --checkout-consent when the merchant asked)"
+    )
+    gmc = Evidence(detail="No Merchant Center input provided (manual input; never guessed)")
+    rs = [
+        *sample_results(),
+        res("C4.captcha_checkout", "not_applicable", 0.0, [probe_off]),
+        res("D5.merchant_center", "not_applicable", 0.0, [gmc]),
+    ]
+    html = render_html(make_report(rs).model_copy(update={"lang": "en"}))
+    assert "--checkout" not in html and "opt-in" not in html  # no operator CLI text
+    assert "We only run the checkout test with your permission" in html
+    assert "This needs data from your Google Merchant Center" in html
+
+
+def test_platform_shown_by_name() -> None:
+    html = render_html(make_report(sample_results()).model_copy(update={"lang": "en"}))
+    assert "Platform: WooCommerce" in html
+    other = make_report(sample_results()).model_copy(
+        update={"lang": "en", "platform": PlatformInfo(platform="other")}
+    )
+    assert "Platform: custom or other" in render_html(other)
+
+
+def test_customer_report_has_snapshot_note() -> None:
+    html = render_html(make_report(sample_results()).model_copy(update={"lang": "en"}))
+    assert "This is a snapshot from 2026-11-10" in html
+
+
+def test_internal_probe_lines_are_not_shown() -> None:
+    ev = [
+        Evidence(detail="Bot challenge before the cart"),
+        Evidence(
+            url="https://shop.example.nl/p",
+            detail="product: blocked - captcha",
+            snippet="checkout_00_challenge.png",
+        ),
+        Evidence(detail="safety_guard: blocked - 11 request(s) blocked: POST /wp-admin/x"),
+    ]
+    html = render_html(make_report([*sample_results(), res("C1.add_to_cart", "fail", 0.0, ev)]))
+    assert "safety_guard" not in html and "checkout_00_challenge.png" not in html
+    assert "Bot challenge before the cart" in html

@@ -12,6 +12,7 @@ CSS, fonts, images or scripts, so the file opens offline and prints as is.
 
 from __future__ import annotations
 
+import re
 from html import escape
 from urllib.parse import urlsplit
 
@@ -21,10 +22,13 @@ from scanner.models import CheckResult, ScanReport, StageScore
 from scanner.report.i18n import (
     EFFORT,
     GRADE,
+    PLATFORM_NAME,
+    PLATFORM_OTHER,
     STAGE,
     STAGE_QUESTION,
     STATUS,
     UI,
+    UNMEASURED,
     WHY,
     Lang,
     label,
@@ -35,6 +39,8 @@ from scanner.report.scoring import IN_SCOPE, STAGES
 DEFAULT_BRAND = "Agent-Ready Scan"
 MAX_EVIDENCE = 3  # per check in HTML; the full list stays in report.json
 MAX_SNIPPET = 200
+INTERNAL_PREFIXES = ("safety_guard:",)
+SCREENSHOT = re.compile(r"^[\w.-]+\.png$")  # probe screenshot file names (artifacts dir)
 
 CSS = """
 :root{--ink:#1c2430;--muted:#5b6574;--line:#dde2e8;--bg:#ffffff;--panel:#f5f7f9;
@@ -79,7 +85,8 @@ border-radius:999px;color:#fff;white-space:nowrap}
 .why{background:var(--panel)}.guide{background:#eef3ff}
 .box b{display:block;font-size:13px}
 .ev{margin:8px 0 0;font-size:13px;color:#2d3643}.ev b{font-size:13px}
-.ev ul{margin:2px 0 0;padding-left:18px}.ev li{margin:2px 0;overflow-wrap:anywhere}
+.ev ul{margin:2px 0 0;padding-left:18px}.ev p{margin:2px 0 0}
+.ev li{margin:2px 0;overflow-wrap:anywhere}
 code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--panel);
 padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}.muted{color:var(--muted)}
 footer{margin-top:40px;color:var(--muted);font-size:12px}
@@ -180,19 +187,35 @@ def _fixes(report: ScanReport, lang: Lang) -> str:
     return head + f"<p class=muted>{esc(intro)}</p><ol class=fixes>{''.join(items)}</ol>"
 
 
+def unmeasured_reason(r: CheckResult, lang: Lang) -> str | None:
+    """Plain-language reason for a check we could not measure (None: show the evidence)."""
+    text = " ".join(e.detail for e in r.evidence)
+    for needle, msg in UNMEASURED:
+        if needle.lower() in text.lower():
+            return msg[lang]
+    return None
+
+
 def _evidence(r: CheckResult, lang: Lang) -> str:
+    if r.status in ("not_applicable", "error"):
+        reason = unmeasured_reason(r, lang)
+        if reason is not None:
+            head = esc(UI["not_measured_why"][lang])
+            return f"<div class=ev><b>{head}</b><p>{esc(reason)}</p></div>"
+    # Internal probe lines (safety-guard log) stay in report.json only.
+    shown = [e for e in r.evidence if not e.detail.startswith(INTERNAL_PREFIXES)]
     # Unmeasured checks: one line saying why is enough.
     limit = 1 if r.status in ("not_applicable", "error") else MAX_EVIDENCE
     rows = []
-    for ev in r.evidence[:limit]:
+    for ev in shown[:limit]:
         parts = [esc(ev.detail)]
         if ev.url:
             parts.append(f"<br>{_href(ev.url)}")
-        if ev.snippet:
+        if ev.snippet and not SCREENSHOT.match(ev.snippet):
             snippet = ev.snippet[:MAX_SNIPPET] + ("…" if len(ev.snippet) > MAX_SNIPPET else "")
             parts.append(f"<br><code>{esc(snippet)}</code>")
         rows.append(f"<li>{''.join(parts)}</li>")
-    extra = len(r.evidence) - limit
+    extra = len(shown) - limit
     if extra > 0:
         rows.append(f"<li class=muted>{esc(UI['more_evidence'][lang].format(n=extra))}</li>")
     if not rows:
@@ -240,6 +263,7 @@ def _method(report: ScanReport, lang: Lang) -> str:
         UI["m_readonly"][lang].format(products=len(report.sampled.get("products", []))),
         UI["m_checkout_on" if report.checkout_tested else "m_checkout_off"][lang],
         UI["m_d2"][lang],
+        UI["m_snapshot"][lang].format(date=report.started_at.strftime("%Y-%m-%d")),
     ]
     body = "".join(f"<li>{esc(i)}</li>" for i in items)
     return f"<h2>{esc(UI['method'][lang])}</h2><ul class=muted>{body}</ul>"
@@ -251,13 +275,14 @@ def render_html(report: ScanReport, *, lang: Lang | None = None, brand: str | No
     host = urlsplit(report.origin).hostname or report.origin
     when = report.started_at.strftime("%Y-%m-%d")
     title = UI["title"][lang]
+    platform = PLATFORM_NAME.get(report.platform.platform, PLATFORM_OTHER[lang])
     return (
         f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f"<title>{esc(title)} — {esc(host)}</title><style>{CSS}</style></head><body><main>"
         f"<p class=meta>{esc(brand)}</p><h1>{esc(title)}</h1>"
         f"<p class=meta>{_href(report.origin)} · {esc(UI['scanned'][lang])} {esc(when)} · "
-        f"{esc(UI['platform'][lang])}: {esc(report.platform.platform)}</p>"
+        f"{esc(UI['platform'][lang])}: {esc(platform)}</p>"
         f"<p class=intro>{esc(UI['intro'][lang])}</p>"
         f"{_summary(report, lang)}{_fixes(report, lang)}"
         f"{_details(report, lang)}{_method(report, lang)}"

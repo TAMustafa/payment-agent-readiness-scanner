@@ -160,7 +160,10 @@ differs from the rows above:*
 - Shopware 6: no official Shopware AG "Agentic Commerce" plugin found; a third-party
   extension (great2gether, "Great Agentic Commerce") exports AI feeds + llms.txt and does
   not sell inside AI chats.
-- Magento/Adobe: sources could not be read; marked "unknown".
+  *Re-verified 2026-11-10:* Shopware AG now publishes an official plugin (SwagAgenticCommerce,
+  github.com/shopware/agentic-commerce, v1.4.0) with UCP, discovery files and feeds.
+- Magento/Adobe: no native channel; Adobe has announced UCP and ACP support (secondary
+  sources, re-verified 2026-11-10).
 - Shopify's old Storefront MCP endpoint `/api/mcp` was removed; MCP now via UCP
   (`/api/ucp/mcp`).
 

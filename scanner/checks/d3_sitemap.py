@@ -121,7 +121,7 @@ async def check(ctx: ScanContext) -> CheckResult:
         evidence.insert(
             0,
             Evidence(
-                detail="A sitemap request was "
+                detail="The sitemap URL "
                 + "; ".join(
                     sorted(
                         {

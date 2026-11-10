@@ -1,6 +1,7 @@
 """Agentic-channel support per platform (SPEC.md §6). Re-verify before each release.
 
-Every row cites the sources read and the date verified. Where a source is silent, the row
+Every row cites the sources read and the date verified (rows re-verified 2026-11-10:
+shopware6, magento). Where a source is silent, the row
 says so instead of guessing; NL availability is not stated by any vendor source read.
 """
 
@@ -12,6 +13,15 @@ from typing import Literal
 from scanner.models import Platform
 
 Level = Literal["native", "third_party", "none", "unknown"]
+
+# Customer-facing platform names (reports show these, never the internal codes).
+DISPLAY_NAME: dict[str, str] = {
+    "shopify": "Shopify",
+    "woocommerce": "WooCommerce",
+    "shopware6": "Shopware 6",
+    "lightspeed": "Lightspeed eCom",
+    "magento": "Magento / Adobe Commerce",
+}
 VERIFIED = "2026-11-08"
 
 
@@ -52,17 +62,21 @@ SUPPORT: dict[Platform, Support] = {
         ("https://developer.woocommerce.com/2025/10/03/ai-agentic-commerce-in-woocommerce/",),
     ),
     "shopware6": Support(
-        "third_party",
-        "Third-party extension 'Great Agentic Commerce' (AI feeds, llms.txt)",
-        "No official Shopware AG agentic channel found. A third-party extension exports AI "
-        "product feeds (incl. Google UCP format) and llms.txt; it does not sell inside AI "
-        "chats. Self-hosted Shopware 6.7 only.",
-        "Geen officieel agentkanaal van Shopware AG gevonden. Een extensie van derden "
-        "exporteert AI-productfeeds (o.a. Google UCP-formaat) en llms.txt; verkopen binnen "
-        "AI-chats doet die niet. Alleen self-hosted Shopware 6.7.",
+        "native",
+        "Official Shopware plugin 'Agentic Commerce' (SwagAgenticCommerce): UCP, agent "
+        "discovery files, OpenAI/Google product feeds",
+        "Shopware AG publishes an official Agentic Commerce plugin (v1.4.0, October 2026) that "
+        "adds a UCP profile and endpoints, agent discovery files and OpenAI/Google product "
+        "feeds. Install and configure it per sales channel; test on staging first.",
+        "Shopware AG publiceert een officiële Agentic Commerce-plugin (v1.4.0, oktober 2026) "
+        "met een UCP-profiel en -endpoints, discovery-bestanden voor agents en productfeeds "
+        "voor OpenAI en Google. Installeer en configureer hem per saleskanaal; test eerst op "
+        "staging.",
         (
-            "https://store.shopware.com/de/great69379953545m/agentic-commerce-umsatz-pro-ki-chatgpt-claude-perplexity-copilot.html",
+            "https://github.com/shopware/agentic-commerce",
+            "https://github.com/shopware/agentic-commerce/releases",
         ),
+        "2026-11-10",
     ),
     "lightspeed": Support(
         "none",
@@ -72,12 +86,18 @@ SUPPORT: dict[Platform, Support] = {
         ("https://www.lightspeedhq.com/ecom/",),
     ),
     "magento": Support(
-        "unknown",
-        "Not verified",
-        "Adobe's Commerce pages could not be read on the verification date; status unknown. "
-        "A product-feed approach is the safe option.",
-        "Adobe Commerce-bronnen konden niet worden gelezen; status onbekend. Een productfeed "
-        "is de veilige route.",
-        (),
+        "none",
+        "No native channel yet (support announced)",
+        "Adobe has said Adobe Commerce will support UCP and ACP, but there is no native module "
+        "yet (secondary sources). Today the options are a custom module, a third-party "
+        "service, or a product feed.",
+        "Adobe heeft aangekondigd dat Adobe Commerce UCP en ACP gaat ondersteunen, maar er is "
+        "nog geen standaardmodule (bronnen van derden). Nu kan het met een eigen module, een "
+        "dienst van derden of een productfeed.",
+        (
+            "https://www.xictron.com/en/blog/agentic-commerce-ucp-2026/",
+            "https://ucphub.ai/",
+        ),
+        "2026-11-10",
     ),
 }

@@ -26,10 +26,11 @@ implementing any check.
 - **Step 3 (V1 AI visibility): built and verified live (2026-11-09)**, 232 tests green.
   Measured ≈ USD 1.15 per full scan (approved), ≈ 8 scans/month. Remaining items: top of
   **`docs/NEXT_STEP.md`**; details in `docs/VERIFY.md`. Settings: `config/visibility.toml`.
-- **Step 4 (scoring + NL/EN HTML report): built and verified (2026-11-10)**, 279 tests green.
+- **Step 4 (scoring + NL/EN HTML report): built and verified (2026-11-10)**, 283 tests green.
   Report scoped to agent-order readiness (4 stages, "why it matters" box per check).
   `scanner/report/`; open points at the end of `docs/VERIFY.md` (merchant test, brand name).
 - **Then:** pilots with real merchants; step 5 (web front-end) only after pilots.
+- **Audit 2026-11-10:** `docs/AUDIT.md` (specs + customer-ready report; open items at the end).
 - **Logs:** `docs/VERIFY.md` (reference shops, every verification run, known limits),
   `docs/SAFETY.md` (what the scanner can never do to a shop, and the tests that prove it).
 - **Repo:** github.com/TAMustafa/payment-agent-readiness-scanner, branch `main`. Tarek commits
@@ -204,5 +205,5 @@ guessed `fail`); nothing to test → `not_applicable`; emerging standards (P3) �
 - `uv run scanner graph` (Mermaid of the pipeline)
 - `uv run ruff check . && uv run mypy scanner`
 - `uv run --env-file .env scanner scan https://example.nl --visibility --out scans/` (V1, paid)
-- `uv run pytest` (≈13 s, 279 tests; probe tests drive real headless Chromium against fake
+- `uv run pytest` (≈13 s, 283 tests; probe tests drive real headless Chromium against fake
   shops; V1 tests use a fake OpenRouter — no paid calls)

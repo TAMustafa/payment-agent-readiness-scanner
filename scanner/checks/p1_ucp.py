@@ -48,6 +48,11 @@ def validate(profile: Any) -> tuple[list[str], list[str]]:
                 errors.append(f"service {name}: invalid transport {t!r}")
             elif t in NEEDS_ENDPOINT and not e.get("endpoint"):
                 errors.append(f"service {name}: {t} transport without endpoint")
+    handlers = ucp.get("payment_handlers")
+    if isinstance(handlers, dict) and not handlers:
+        notes.append("no payment handler declared: agents cannot pay through UCP yet")
+    elif isinstance(handlers, dict):
+        notes.append(f"payment handlers: {', '.join(sorted(handlers))}")
     caps = ucp.get("capabilities") or {}
     if isinstance(caps, dict) and caps:
         checkout = "yes" if "dev.ucp.shopping.checkout" in caps else "no"
