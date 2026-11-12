@@ -430,3 +430,58 @@ test). Manual check (2 GETs): S1 warn correct (Product only as microdata, no JSO
 correct (no shippingDetails / hasMerchantReturnPolicy), C3 pass correct (/betaalopties/ lists
 Visa, Mastercard, iDEAL, Wero; Apple Pay on the home page). **No false results.**
 301 tests green.
+
+### 2026-11-12 (night) — code review of the checkout probe: 4 false results, 5 guard gaps
+
+Found by review and reproduced with fake shops in headless Chromium (offline; **not yet
+confirmed on a live shop** — the next approved `--checkout` run should compare screenshots).
+
+False results, fixed:
+1. **Cart taken for the checkout.** Any required e-mail field counted as a checkout form; a
+   footer newsletter field made the probe stop on `/cart` and report "checkout reached"
+   (C2 pass, C4 pass, C3 from footer logos). Now: payment choices, required address fields, or
+   a *visible* required e-mail field outside footer / newsletter blocks.
+2. **A checkout click that opened nothing counted as reached** — including Shopify classic
+   themes, whose cart button POSTs the cart form (refused by the guard; `checkout_url` was
+   `chrome-error://`). Now the probe needs another URL, a checkout form, or a new guest/login
+   step on the same URL (HEMA's drawer). On Shopify it then tries a plain `GET /checkout`
+   (robots.txt respected). Otherwise C2–C4 are "not measured".
+3. **A 404 cart page counted as "cart has an item"** (no "cart is empty" text on an error
+   page). Now an HTTP error on the cart is a failed step; a cart the shop navigated to itself
+   is also checked for "empty".
+4. **"Toevoegen aan verlanglijst" could be clicked as add-to-cart** (locators return matches in
+   page order, not selector order) and its POST went through. Now platform buttons first, and
+   wishlist / compare / review labels are excluded.
+
+Guard gaps, closed: payment hosts for Google Pay, Amazon Pay, Apple Pay sessions and Shopify
+card fields (two patterns could never match); order endpoints in the query string
+(`?wc-ajax=checkout`) and `order-received` / `saveOrder`; service workers blocked and
+WebSockets refused; variant selection limited to the add-to-cart form; a popup that cannot be
+closed no longer ends the probe.
+
+Mutation check: without `service_workers="block"` the new safety test fails (the worker
+script is fetched). 322 tests green.
+
+Known limit, unchanged: "cart has an item" still rests on the absence of "empty" text plus a
+non-error status, not on a counted line item.
+
+### 2026-11-12 (night) — remaining review items (offline tests only, no live run)
+
+1. **Hard timeout no longer costs a paid V1 run.** `--visibility` adds
+   `VisibilityConfig.max_duration_s()` (calls / concurrency x `timeout_s`; 900 s with the
+   current settings) to the hard timeout, and every V1 call is cut off at `timeout_s`.
+2. **The probe cannot overrun the scan.** It gets the remaining fetch time + 5 s; when that
+   runs out C1–C4 are "not measured" and the rest of the report is kept. Limit: the steps the
+   probe had finished are lost in that case.
+3. **Each HTTP request is cut off after 15 s in total** (was: per read).
+4. **A V1 call that was sent but got no answer is booked at its worst case** (was: free).
+5. **LangSmith tracing always hides run inputs and outputs** (checked against the installed
+   client: `hide_inputs` / `hide_outputs` are true after `enforce_trace_privacy()`).
+6. **robots.txt 429:** one retry after the back-off; a second 429 → nothing else is fetched
+   from that host and D1 reports "could not verify".
+7. **P1:** HTTP 5xx on `/.well-known/ucp` → "not measured" instead of fail.
+8. **Private and local addresses are refused** (scan URL, redirects, probe browser). Limit: no
+   DNS check, so a public name pointing at a private address still gets through — needed
+   before the web front-end (step 5).
+Also: the 429 back-off is one function for HTTP fetches and browser navigations.
+344 tests green.

@@ -24,6 +24,7 @@ from scanner.models import (
     CheckoutProbe,
     FetchedResource,
     PageSample,
+    Platform,
     PlatformInfo,
     ScanContext,
     ScanOptions,
@@ -90,7 +91,11 @@ class BrowserShop:
         checkout_html: str = CHECKOUT_GUEST,
         challenge: bool = False,
         product_html: str = PRODUCT_HTML,
+        cart_html: str | None = None,
+        cart_status: int = 200,
     ) -> None:
+        self.cart_html = cart_html
+        self.cart_status = cart_status
         self.checkout_html = checkout_html
         self.product_html = product_html
         self.challenge = challenge
@@ -117,8 +122,8 @@ class BrowserShop:
             self.added = True
             await route.fulfill(status=200, body="{}", content_type="application/json")
         elif path == "/cart":
-            body = CART_FULL if self.added else CART_EMPTY
-            await route.fulfill(status=200, body=body, content_type="text/html")
+            body = (self.cart_html or CART_FULL) if self.added else CART_EMPTY
+            await route.fulfill(status=self.cart_status, body=body, content_type="text/html")
         elif path == "/checkout":
             await route.fulfill(status=200, body=self.checkout_html, content_type="text/html")
         else:
@@ -138,12 +143,17 @@ def pages() -> PageSample:
     )
 
 
-async def run(shop: BrowserShop, robots: str | None = None, consent: bool = False) -> CheckoutProbe:
+async def run(
+    shop: BrowserShop,
+    robots: str | None = None,
+    consent: bool = False,
+    platform: Platform = "woocommerce",
+) -> CheckoutProbe:
     async with PoliteClient(min_interval_s=0) as client:
         if robots is not None:
             client.set_robots("shop.example.nl", RobotsTxt.parse(robots))
         probe = await probe_mod.run_probe(
-            client, ORIGIN, "woocommerce", pages(), consent=consent, route_hook=shop.hook
+            client, ORIGIN, platform, pages(), consent=consent, route_hook=shop.hook
         )
     if probe.skipped_reason and "Chromium not available" in probe.skipped_reason:
         pytest.skip("Chromium not installed")
@@ -251,3 +261,102 @@ async def test_visible_captcha_on_product_page_blocks() -> None:
     assert p.challenge is not None and "visible captcha" in p.challenge
     assert not shop.added
     assert (await c1_add_to_cart.check(ctx_with(p))).status == "fail"
+
+
+# --- false results found in the 2026-11-12 review ------------------------------------------
+
+NEWSLETTER = """<footer><form action="/newsletter"><input type="email" required
+ placeholder="Nieuwsbrief"><img alt="iDEAL" src="/i.svg"><img alt="Visa" src="/v.svg">
+</form></footer>"""
+CART_NEWSLETTER = CART_FULL.replace("</body>", NEWSLETTER + "</body>")
+# Shopify classic themes: the cart's checkout button posts the cart form.
+CART_POST_FORM = """<html><body><h1>Winkelwagen</h1><p>Fietstas x1</p>
+<form action="/cart" method="post"><button type="submit" name="checkout">Afrekenen</button>
+</form></body></html>"""
+CART_DEAD_BUTTON = """<html><body><h1>Winkelwagen</h1><p>Fietstas x1</p>
+<button onclick="void 0">Afrekenen</button></body></html>"""
+# HEMA (docs/VERIFY.md): "bestellen" opens a login/guest drawer, the URL stays the same.
+CART_DRAWER = """<html><body><h1>Winkelwagen</h1><p>Fietstas x1</p>
+<button onclick="document.getElementById('d').style.display='block'">Bestellen</button>
+<div id="d" role="dialog" style="display:none"><a href="/login">Inloggen</a>
+<a href="/checkout">Bestellen als gast</a></div></body></html>"""
+WISHLIST_FIRST = """<button onclick="fetch('/wishlist/add',{method:'POST'})"
+>Toevoegen aan verlanglijst</button>"""
+PRODUCT_SELECTS = """<!doctype html><html><head><meta charset="utf-8"></head><body>
+<form action="/localization"><select name="lang" onchange="location.href='/lang/'+this.value">
+<option value="">Nederlands</option><option value="en">English</option></select></form>
+<h1>Fietstas</h1>
+<form action="/cart/add"><select id="v" name="variant"><option value="">Kies een maat</option>
+<option value="m">M</option></select>
+<button type="button" onclick="if(document.getElementById('v').value)
+fetch('/cart/add',{method:'POST'}).then(()=>location.href='/cart')">In winkelwagen</button>
+</form></body></html>"""
+STUCK_POPUP = """<div role="dialog"><p>Schrijf je in</p>
+<button aria-label="Sluiten" disabled>x</button></div>"""
+
+
+async def test_newsletter_field_on_cart_is_not_mistaken_for_checkout() -> None:
+    shop = BrowserShop(cart_html=CART_NEWSLETTER)
+    p = await run(shop)
+    assert ("GET", "/checkout") in shop.requests
+    assert p.checkout_reached and p.checkout_url == f"{ORIGIN}/checkout"
+
+
+async def test_checkout_click_that_opens_nothing_is_not_checkout_reached() -> None:
+    p = await run(BrowserShop(cart_html=CART_DEAD_BUTTON))
+    assert p.added_to_cart and not p.checkout_reached and p.checkout_url is None
+    c = ctx_with(p)
+    assert (await c2_guest_checkout.check(c)).status == "error"
+    assert (await c4_captcha_checkout.check(c)).status == "error"
+
+
+async def test_checkout_drawer_without_url_change_counts_as_reached() -> None:
+    p = await run(BrowserShop(cart_html=CART_DRAWER))
+    assert p.checkout_reached and p.guest_option
+
+
+async def test_blocked_post_checkout_form_is_not_checkout_reached() -> None:
+    shop = BrowserShop(cart_html=CART_POST_FORM)
+    p = await run(shop)
+    assert ("POST", "/cart") not in shop.requests  # the guard still refuses the POST
+    assert not p.checkout_reached
+    assert (await c4_captcha_checkout.check(ctx_with(p))).status == "error"
+
+
+async def test_shopify_post_checkout_form_falls_back_to_get_checkout() -> None:
+    shop = BrowserShop(cart_html=CART_POST_FORM)
+    p = await run(shop, platform="shopify")
+    assert [r for r in shop.requests if r[0] == "POST"] == [("POST", "/cart/add")]
+    assert p.checkout_reached and p.checkout_url == f"{ORIGIN}/checkout" and p.guest_option
+
+
+async def test_cart_error_page_is_not_a_filled_cart() -> None:
+    # The product page stays put after adding, so the probe has to open the cart itself.
+    stay = PRODUCT_HTML.replace(".then(()=>location.href='/cart')", "")
+    shop = BrowserShop(
+        product_html=stay, cart_html="<html><body>Niet gevonden</body></html>", cart_status=404
+    )
+    p = await run(shop)
+    assert not p.added_to_cart and not p.checkout_reached
+    assert (await c1_add_to_cart.check(ctx_with(p))).status == "error"
+
+
+async def test_wishlist_button_is_never_clicked_as_add_to_cart() -> None:
+    shop = BrowserShop(
+        product_html=PRODUCT_HTML.replace("<button id=", WISHLIST_FIRST + "<button id=")
+    )
+    p = await run(shop)
+    assert [r for r in shop.requests if r[0] == "POST"] == [("POST", "/cart/add")]
+    assert p.added_to_cart
+
+
+async def test_only_selects_in_the_add_to_cart_form_are_changed() -> None:
+    shop = BrowserShop(product_html=PRODUCT_SELECTS)
+    p = await run(shop)
+    assert not [r for r in shop.requests if r[1].startswith("/lang/")]  # language untouched
+    assert p.added_to_cart  # the variant select was set, so the button worked
+
+
+async def test_popup_that_cannot_be_closed_does_not_abort_the_probe() -> None:
+    p = await run(BrowserShop(product_html=product_with(STUCK_POPUP)))
+    assert p.added_to_cart and p.checkout_reached

@@ -323,3 +323,30 @@ async def test_visibility_off_by_default(tmp_path: Path, monkeypatch: pytest.Mon
     report = await vscan(tmp_path, fake, monkeypatch, options=ScanOptions(checks=["D1"]))
     assert report.visibility is None and fake.posts == [] and fake.gets == []
     assert all(r.id != "V1.prompt_visibility" for r in report.results)
+
+
+class TimeoutOnce(FakeOpenRouter):
+    """The first chat call times out after it was sent: OpenRouter may have billed it."""
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and not self.posts:
+            self.posts.append(json.loads(request.content))
+            raise httpx.ReadTimeout("timed out", request=request)
+        return super().handler(request)
+
+
+async def test_call_that_times_out_is_booked_at_worst_case(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = TimeoutOnce()
+    cfg = config_file(tmp_path, **{"per_scan_usd = 1.40": "per_scan_usd = 2.00"})
+    report = await vscan(tmp_path, fake, monkeypatch, cfg=cfg)
+    vis = report.visibility
+    assert vis is not None
+    lost = [c for c in vis.calls if c.error]
+    assert len(lost) == 1 and "worst case booked" in (lost[0].error or "")
+    assert lost[0].cost_usd > 0.012  # more than a normal call: never under-counted
+    assert vis.total_cost_usd == pytest.approx(39 * 0.012 + lost[0].cost_usd)
+    rows = [json.loads(x) for x in (tmp_path / "ledger.jsonl").read_text().splitlines()]
+    assert len(rows) == 40
+    assert sum(r["cost_usd"] for r in rows) == pytest.approx(vis.total_cost_usd)

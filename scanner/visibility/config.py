@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import tomllib
 from pathlib import Path
 
@@ -56,6 +57,13 @@ class VisibilityConfig(BaseModel):
     run: Run = Field(default_factory=Run)
     privacy: Privacy = Field(default_factory=Privacy)
     assistants: list[Assistant] = Field(min_length=1)
+
+    def max_duration_s(self) -> float:
+        """Upper bound for a V1 run: every call is cut off at `timeout_s`, and at most
+        `concurrency` run at once. The CLI adds this to the scan's hard timeout."""
+        calls = len(self.assistants) * self.run.runs
+        calls *= self.run.brand_questions + self.run.category_questions
+        return math.ceil(calls / self.run.concurrency) * self.run.timeout_s
 
 
 def load_config(path: Path | None = None) -> VisibilityConfig:

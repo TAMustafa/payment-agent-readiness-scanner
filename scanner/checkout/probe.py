@@ -30,6 +30,7 @@ from scanner.checkout.markers import (
     FORBIDDEN_CLICK,
     GUEST,
     LOGIN,
+    NOT_ADD_TO_CART,
     ORDER_PATHS,
     PAYMENT_HOSTS,
     REJECT_COOKIES,
@@ -40,7 +41,7 @@ from scanner.checkout.markers import (
     payment_methods_in,
 )
 from scanner.fetch.challenge import classify
-from scanner.fetch.client import PoliteClient
+from scanner.fetch.client import PoliteClient, private_host
 from scanner.models import (
     CheckoutProbe,
     FetchedResource,
@@ -50,7 +51,6 @@ from scanner.models import (
     RenderedPage,
 )
 from scanner.parse.product import offer_price, offers_of, product_data
-from scanner.sampling.urls import looks_like_product_url
 
 BLOCKED_TYPES = frozenset({"image", "media", "font"})
 TRACKERS = re.compile(
@@ -78,16 +78,31 @@ PROBE_RESERVE_S = 0.0  # last network step of the scan: may use the remaining ti
 RouteHook = Callable[[Any], Awaitable[None]]  # tests serve a fake shop through this
 
 
+# Payment choices or required address fields; or a visible required e-mail field that is
+# not a newsletter sign-up (most shops have one in the footer of every page: it made the
+# cart look like the checkout, found 2026-11-12).
+_CHECKOUT_FORM_JS = """() => {
+  const strong = "input[name*=payment i], input[name*=betaal i], [data-payment-method], " +
+    "input[required][name*=street i], input[required][name*=postcode i], " +
+    "input[required][autocomplete*=address i]";
+  if (document.querySelector(strong)) return true;
+  const aside = "footer, [class*=newsletter i], [id*=newsletter i], [class*=nieuwsbrief i], " +
+    "[id*=nieuwsbrief i], [class*=subscribe i], form[action*=newsletter i], " +
+    "form[action*=subscribe i], form[action*=nieuwsbrief i]";
+  return [...document.querySelectorAll("input[required][type=email]")].some(
+    e => e.getClientRects().length > 0 && !e.closest(aside));
+}"""
+# Signs that a checkout step is open: guest/login choice or visible e-mail/password fields.
+_CHECKOUT_SIGNS_JS = """() => [...document.querySelectorAll(
+  "input[type=email], input[type=password], input[name*=email i]")]
+  .filter(e => e.getClientRects().length > 0).length"""
+SHOPIFY_CHECKOUT = "/checkout"  # plain GET: Shopify redirects to the checkout of this cart
+
+
 async def looks_like_checkout(page: Any) -> bool:
     """Payment-method choices or required address/e-mail fields = a checkout form."""
-    selector = (
-        "input[name*=payment i], input[name*=betaal i], [data-payment-method], "
-        "input[required][name*=street i], input[required][name*=postcode i], "
-        "input[required][autocomplete*=address i], input[required][type=email]"
-    )
     try:
-        count: int = await page.locator(selector).count()
-        return count > 0
+        return bool(await page.evaluate(_CHECKOUT_FORM_JS))
     except Exception:
         return True  # unsure -> treat as checkout -> do not click
 
@@ -231,18 +246,20 @@ class _Probe:
                 return label
         return None
 
-    def guard(self, method: str, url: str, navigation: bool) -> str | None:
+    def guard(self, method: str, url: str) -> str | None:
         """Hard safety net (CLAUDE.md rule 1): reasons to abort a request, or None.
 
-        - never any request to a payment provider / bank host;
-        - never any request to an order/payment/confirmation path;
+        - never any request to a payment provider / bank host, or to a private address;
+        - never any request to an order/payment/confirmation path or query;
         - non-GET only during the add-to-cart click, and only to the shop's own host.
         """
         parts = urlsplit(url)
         host = (parts.hostname or "").lower()
-        if PAYMENT_HOSTS.search(host) or PAYMENT_HOSTS.search(host + parts.path):
+        if PAYMENT_HOSTS.search(host):
             return "payment provider"
-        if ORDER_PATHS.search(parts.path):
+        if private_host(host):
+            return "private or local address"
+        if ORDER_PATHS.search(parts.path + (f"?{parts.query}" if parts.query else "")):
             return "order/payment path"
         if method.upper() not in ("GET", "HEAD", "OPTIONS"):
             same_shop = host == self.host or host.endswith("." + self.host)
@@ -268,22 +285,34 @@ class _Probe:
             self.step("cookie_banner", "ok", f"cookie banner {kind} via '{how}'", page.url)
 
     async def popups(self, page: Any) -> None:
-        dialogs = page.locator("[role=dialog]:visible, .modal.show, .modal.is-open")
-        if not await dialogs.count():
-            return
-        closers = dialogs.first.locator("button, [role=button], a")
-        for i in range(min(await closers.count(), 20)):
-            c = closers.nth(i)
-            label = ((await c.get_attribute("aria-label")) or (await c.inner_text()) or "").strip()
-            if CLOSE_POPUP.search(label):
-                await c.click(timeout=2_000)
-                self.out.interstitials.append("popup")
-                self.step("popup", "ok", f"closed a popup via '{label}'", page.url)
+        try:
+            dialogs = page.locator("[role=dialog]:visible, .modal.show, .modal.is-open")
+            if not await dialogs.count():
                 return
+            closers = dialogs.first.locator("button, [role=button], a")
+            for i in range(min(await closers.count(), 20)):
+                c = closers.nth(i)
+                label = (
+                    (await c.get_attribute("aria-label", timeout=500))
+                    or (await c.inner_text(timeout=500))
+                    or ""
+                ).strip()
+                if CLOSE_POPUP.search(label):
+                    await c.click(timeout=2_000)
+                    self.out.interstitials.append("popup")
+                    self.step("popup", "ok", f"closed a popup via '{label}'", page.url)
+                    return
+        except Exception as exc:  # a popup we cannot close must not end the probe
+            self.step(
+                "popup", "failed", f"could not close a popup ({type(exc).__name__})", page.url
+            )
 
     async def add_to_cart(self, page: Any) -> bool:
         # Variant selects (e.g. WooCommerce variable products): pick the first real option.
-        for sel in await page.locator("form select:visible").all():
+        # Only inside the form that holds the add-to-cart button: language, currency and
+        # sort selects elsewhere on the page are left alone.
+        cart_forms = page.locator("form").filter(has_text=ADD_TO_CART)
+        for sel in await cart_forms.locator("select:visible").all():
             try:
                 options = await sel.locator("option").all()
                 values = [await o.get_attribute("value") for o in options]
@@ -292,18 +321,23 @@ class _Probe:
                     await sel.select_option(first)
             except Exception:
                 continue
-        candidates = page.locator(
+        # Two passes: a locator returns matches in page order, so the platforms' own
+        # add-to-cart buttons are tried before any other button with a matching label.
+        specific = page.locator(
             "form[action*='cart'] button[type=submit], button[name='add'], "
-            "button[name='add-to-cart'], button.single_add_to_cart_button, "
-            "button, input[type=submit]"
+            "button[name='add-to-cart'], button.single_add_to_cart_button"
         )
-        for i in range(min(await candidates.count(), 80)):
-            b = candidates.nth(i)
+        generic = page.locator("button, input[type=submit]")
+        candidates = [specific.nth(i) for i in range(min(await specific.count(), 20))]
+        candidates += [generic.nth(i) for i in range(min(await generic.count(), 80))]
+        for b in candidates:
             try:
                 label = (await b.inner_text(timeout=500)).strip() or (
                     await b.get_attribute("value") or ""
                 )
                 if not label or FORBIDDEN_CLICK.search(label) or not ADD_TO_CART.search(label):
+                    continue
+                if NOT_ADD_TO_CART.search(label):
                     continue
                 if not await b.is_visible() or await b.is_disabled():
                     continue
@@ -326,19 +360,26 @@ class _Probe:
         return False
 
     async def open_cart(self, page: Any) -> bool:
-        if re.search(r"cart|winkel(wagen|mand)", urlsplit(page.url).path, re.I):
-            return True  # the shop already navigated to its cart
-        hrefs = await page.eval_on_selector_all(
-            "a[href]", "els => els.map(e => e.getAttribute('href'))"
-        )
-        cart_href = next(
-            (h for h in hrefs if h and re.search(r"/(cart|winkel(wagen|mand|mandje))\b", h, re.I)),
-            None,
-        )
-        url = urljoin(page.url, cart_href) if cart_href else urljoin(self.origin, CART_PATHS[0])
-        resp = await self.goto(page, url, "cart")
-        if resp is None:
-            return False
+        # Unless the shop already navigated to its cart, open it.
+        if not re.search(r"cart|winkel(wagen|mand)", urlsplit(page.url).path, re.I):
+            hrefs = await page.eval_on_selector_all(
+                "a[href]", "els => els.map(e => e.getAttribute('href'))"
+            )
+            cart_href = next(
+                (
+                    h
+                    for h in hrefs
+                    if h and re.search(r"/(cart|winkel(wagen|mand|mandje))\b", h, re.I)
+                ),
+                None,
+            )
+            url = urljoin(page.url, cart_href or CART_PATHS[0])
+            resp = await self.goto(page, url, "cart")
+            if resp is None:
+                return False
+            if resp.status >= 400:  # an error page has no "cart is empty" text either
+                self.step("cart", "failed", f"cart page returned HTTP {resp.status}", page.url)
+                return False
         html = await page.content()
         if CART_EMPTY.search(html):
             self.out.added_to_cart = False
@@ -385,6 +426,7 @@ class _Probe:
             # One-page cart+checkout: a "bestellen" button here could place an order.
             self.step("checkout", "ok", "cart page already is the checkout; not clicking", page.url)
             return "current page"
+        before = await self._checkout_state(page)
         clicked = await self._click_checkout(page)
         if not clicked:
             self.step("checkout", "failed", "no checkout button found on the cart", page.url)
@@ -392,6 +434,19 @@ class _Probe:
         with contextlib.suppress(Exception):
             await page.wait_for_load_state("domcontentloaded", timeout=NAV_TIMEOUT_MS)
         await page.wait_for_timeout(SETTLE_MS)
+        if not await self._arrived(page, before):
+            # The click led nowhere, e.g. a cart form that POSTs (refused by the guard).
+            # Shopify also opens the checkout of the current cart on a plain GET.
+            where = urljoin(self.origin, SHOPIFY_CHECKOUT)
+            resp = await self.goto(page, where, "checkout") if self.platform == "shopify" else None
+            if resp is None or resp.status >= 400 or page.url.startswith("chrome-error:"):
+                self.step(
+                    "checkout",
+                    "failed",
+                    f"clicked '{clicked[:50]}' but no checkout page or step opened",
+                    None if page.url.startswith("chrome-error:") else page.url,
+                )
+                return None
         if not self.allowed(page.url):  # redirect leak: do not read or keep the page
             self.out.skipped_kind = "robots"
             self.out.skipped_reason = (
@@ -400,6 +455,26 @@ class _Probe:
             self.step("checkout", "skipped", self.out.skipped_reason, page.url)
             return None
         return clicked
+
+    async def _checkout_state(self, page: Any) -> tuple[str, bool, int]:
+        """(URL, guest option visible, visible e-mail/password fields) of the current page."""
+        try:
+            text = await page.inner_text("body", timeout=2_000)
+            fields = int(await page.evaluate(_CHECKOUT_SIGNS_JS))
+        except Exception:
+            text, fields = "", 0
+        return page.url, bool(GUEST.search(text)), fields
+
+    async def _arrived(self, page: Any, before: tuple[str, bool, int]) -> bool:
+        """Did the checkout click open something? Another page, a checkout form, or a
+        guest/login step on the same URL (HEMA opens a drawer). A click that changes
+        nothing is not "checkout reached"."""
+        if page.url.startswith("chrome-error:"):
+            return False
+        url, guest, fields = await self._checkout_state(page)
+        if url.split("#")[0] != before[0].split("#")[0]:
+            return True
+        return (guest and not before[1]) or fields > before[2] or await looks_like_checkout(page)
 
     async def _click_checkout(self, page: Any) -> str | None:
         items = page.locator("a, button, input[type=submit]")
@@ -449,18 +524,25 @@ class _Probe:
     async def run(
         self, browser: Any, product: FetchedResource, route_hook: RouteHook | None
     ) -> CheckoutProbe:
-        from scanner.fetch.client import default_user_agent
-
         context = await browser.new_context(
-            user_agent=self.client.user_agent or default_user_agent(),
+            user_agent=self.client.user_agent,
             locale="nl-NL",
             viewport={"width": 1366, "height": 900},
             java_script_enabled=True,
+            # Requests handled by a service worker are invisible to the route guard below
+            # (https://playwright.dev/python/docs/service-workers): no service workers.
+            service_workers="block",
+            accept_downloads=False,
         )
+
+        async def refuse_websocket(ws: Any) -> None:
+            # A WebSocket is a write channel the request guard cannot inspect.
+            self.blocked_requests.append(f"websocket: {ws.url[:120]}")
+            await ws.close()
 
         async def router(route: Any) -> None:
             req = route.request
-            why = self.guard(req.method, req.url, req.is_navigation_request())
+            why = self.guard(req.method, req.url)
             if why:
                 self.blocked_requests.append(f"{why}: {req.method} {req.url[:120]}")
                 await route.abort()
@@ -472,6 +554,7 @@ class _Probe:
                 await route.continue_()
 
         await context.route("**/*", router)
+        await context.route_web_socket("**/*", refuse_websocket)
         page = await context.new_page()
         try:
             self.out.product_url = product.url
@@ -579,7 +662,3 @@ async def run_probe(
             )
         )
         return probe.out
-
-
-def is_probably_product(url: str) -> bool:  # re-exported for tests
-    return looks_like_product_url(url)

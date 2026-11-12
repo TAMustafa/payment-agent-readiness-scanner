@@ -192,3 +192,8 @@ async def test_d5_manual_input_only() -> None:
     warn = await d5_merchant_center.check(ctx(options=opts(True, 12)))
     assert warn.status == "warn" and warn.score_fraction == 0.88
     assert (await d5_merchant_center.check(ctx(options=opts(True, 40)))).status == "fail"
+
+
+async def test_p1_server_error_is_not_measured_instead_of_a_guessed_fail() -> None:
+    r = await p1_ucp.check(ctx(res(UCP_URL, 503, "upstream error")))
+    assert r.status == "error" and "503" in r.evidence[0].detail

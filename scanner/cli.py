@@ -16,8 +16,17 @@ from scanner.models import ScanOptions, ScanReport
 from scanner.report.html import DEFAULT_BRAND, render_html
 from scanner.report.i18n import Lang
 from scanner.report.scoring import summarise
+from scanner.visibility.config import load_config
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
+
+
+def hard_timeout_s(options: ScanOptions) -> float:
+    """Last-resort limit for the whole run. The paid V1 step comes after the shop scan and
+    is bounded by its own per-call timeouts, so it gets its own allowance on top: a slow V1
+    run must not throw away a finished scan and answers that were already paid for."""
+    extra = load_config().max_duration_s() if options.visibility else 0.0
+    return options.max_timeout_s + extra
 
 
 @app.callback()
@@ -51,7 +60,8 @@ def scan(
         float | None,
         typer.Option(
             "--timeout",
-            help="Hard scan timeout, seconds (default: 120, or 240 when the shop runs on Shopify)",
+            help="Hard scan timeout, seconds (default: 120, or 240 when the shop runs on "
+            "Shopify). --visibility adds its own time on top.",
         ),
     ] = None,
     gmc_active: Annotated[
@@ -105,12 +115,17 @@ def scan(
         artifacts_dir=str(artifacts) if artifacts else None,
         lang=report_lang,
     )
+    limit = hard_timeout_s(options)
     try:
-        report = asyncio.run(
-            asyncio.wait_for(run_scan(url, options), timeout=options.max_timeout_s)
-        )
+        report = asyncio.run(asyncio.wait_for(run_scan(url, options), timeout=limit))
     except TimeoutError:
-        typer.echo(f"Scan exceeded hard timeout of {options.max_timeout_s:.0f}s", err=True)
+        typer.echo(f"Scan exceeded hard timeout of {limit:.0f}s; no report written", err=True)
+        if visibility and artifacts is not None:
+            typer.echo(
+                f"V1 answers received so far are in {artifacts / 'visibility' / 'raw'}; their "
+                "costs are in the ledger.",
+                err=True,
+            )
         raise typer.Exit(code=2) from None
     except ValueError as exc:
         typer.echo(str(exc), err=True)

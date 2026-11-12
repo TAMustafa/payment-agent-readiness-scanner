@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import gzip
 import time
 from collections.abc import Callable
 
 import httpx
+import pytest
 
 from scanner.fetch.client import ROBOTS_TOKEN, PoliteClient
 from scanner.fetch.robots import RobotsTxt
@@ -143,3 +145,70 @@ async def test_budget_can_be_extended_but_never_shortened(
     async with PoliteClient(transport=shop.transport, min_interval_s=0) as unbounded:
         unbounded.extend_budget(230)  # no budget at all: stays unbounded
         assert unbounded.time_left() == float("inf")
+
+
+# --- 2026-11-12 review: total request timeout, private addresses, robots.txt 429 -----------
+
+
+async def test_slow_response_is_cut_off_at_the_request_timeout() -> None:
+    # httpx timeouts are per read: a slow-dripping server could run past the scan deadline.
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(2)
+        return httpx.Response(200, text="late")
+
+    started = time.monotonic()
+    async with PoliteClient(
+        transport=httpx.MockTransport(slow), min_interval_s=0, timeout_s=0.2
+    ) as c:
+        res = await c.get(f"{ORIGIN}/slow")
+    assert res.status_code is None and res.error and "longer than" in res.error
+    assert time.monotonic() - started < 1.5
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/",
+        "http://localhost:8080/admin",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://192.168.1.1/",
+        "http://[::1]/",
+        "http://intranet.local/",
+    ],
+)
+async def test_private_addresses_are_never_requested(
+    make_shop: Callable[..., FakeShop], url: str
+) -> None:
+    shop = make_shop()
+    async with PoliteClient(transport=shop.transport, min_interval_s=0) as c:
+        res = await c.get(url)
+    assert res.error and "private or local address" in res.error
+    assert shop.requests == []
+
+
+async def test_redirect_to_a_private_address_is_not_followed(
+    make_shop: Callable[..., FakeShop],
+) -> None:
+    shop = make_shop(
+        {f"{ORIGIN}/r": (302, "", {"location": "http://169.254.169.254/latest/meta-data/"})}
+    )
+    async with PoliteClient(transport=shop.transport, min_interval_s=0) as c:
+        res = await c.get(f"{ORIGIN}/r")
+    assert res.error and "private or local address" in res.error
+    assert [str(r.url) for r in shop.requests] == [f"{ORIGIN}/r"]
+
+
+async def test_robots_txt_rate_limited_twice_means_no_crawling(
+    make_shop: Callable[..., FakeShop],
+) -> None:
+    # RFC 9309 reads a 4xx as "no robots.txt, crawl everything"; after a 429 that is the
+    # opposite of polite. Retry once, then treat the host as off limits for this scan.
+    from scanner.graph import run_scan
+    from scanner.models import ScanOptions
+
+    shop = make_shop({f"{ORIGIN}/robots.txt": (429, "slow down"), f"{ORIGIN}/": (200, "<html>")})
+    report = await run_scan(
+        ORIGIN, ScanOptions(checks=["D1"]), transport=shop.transport, min_interval_s=0
+    )
+    assert shop.paths() == ["/robots.txt", "/robots.txt"]
+    assert report.results[0].status == "error"

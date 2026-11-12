@@ -35,6 +35,9 @@ implementing any check.
   payments"), stage minimum 50 %, overall grade only when both are graded, P2/P3 folded into
   the P1 fix, C3 unverifiable → not measured, P1 warns without payment handler/checkout.
   SPEC §5; log in `docs/VERIFY.md`. 301 tests green.
+- **Probe review (2026-11-12):** 4 false checkout results and 5 guard gaps fixed (fake-shop
+  tests; not yet confirmed live), then timeouts, V1 cost booking, tracing privacy, robots 429,
+  P1 5xx and private-address refusal. Log and limits: end of `docs/VERIFY.md`. 344 tests green.
 - **Logs:** `docs/VERIFY.md` (reference shops, every verification run, known limits),
   `docs/SAFETY.md` (what the scanner can never do to a shop, and the tests that prove it).
 - **Repo:** github.com/TAMustafa/payment-agent-readiness-scanner, branch `main`. Tarek commits
@@ -214,5 +217,5 @@ guessed `fail`); nothing to test → `not_applicable`; emerging standards (P3) �
 - `uv run scanner graph` (Mermaid of the pipeline)
 - `uv run ruff check . && uv run mypy scanner`
 - `uv run --env-file .env scanner scan https://example.nl --visibility --out scans/` (V1, paid)
-- `uv run pytest` (≈13 s, 301 tests; probe tests drive real headless Chromium against fake
+- `uv run pytest` (≈25 s, 344 tests; probe tests drive real headless Chromium against fake
   shops; V1 tests use a fake OpenRouter — no paid calls)

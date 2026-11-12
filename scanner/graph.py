@@ -11,6 +11,7 @@ API reference (LangGraph 1.2): https://docs.langchain.com/oss/python/langgraph/g
 
 from __future__ import annotations
 
+import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -66,6 +67,17 @@ def build_graph() -> CompiledStateGraph[ScanState, ScanDeps, ScanState, ScanStat
     return g.compile()
 
 
+def enforce_trace_privacy() -> None:
+    """CLAUDE.md rule 3: optional LangSmith tracing must never upload page HTML or personal
+    data. Graph state holds full page bodies, so run inputs and outputs are always hidden;
+    traces keep the node names, timings and errors (enough to debug the graph).
+    Read by the LangSmith client as `hide_inputs` / `hide_outputs` (checked against the
+    installed client 2026-11-12)."""
+    for prefix in ("LANGSMITH", "LANGCHAIN"):
+        os.environ[f"{prefix}_HIDE_INPUTS"] = "true"
+        os.environ[f"{prefix}_HIDE_OUTPUTS"] = "true"
+
+
 async def run_scan(
     url: str,
     options: ScanOptions | None = None,
@@ -77,6 +89,7 @@ async def run_scan(
     visibility_config_path: str | None = None,
     visibility_ledger_path: str | None = None,
 ) -> ScanReport:
+    enforce_trace_privacy()
     opts = options or ScanOptions()
     graph = build_graph()
     initial: ScanState = {

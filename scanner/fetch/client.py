@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import io
+import ipaddress
 import os
 import time
 from types import TracebackType
@@ -29,6 +30,40 @@ MAX_BODY_BYTES = 5_000_000
 MAX_RETRY_AFTER_S = 60.0  # honour up to this; longer waits end the fetch phase instead
 MAX_BACKOFF_S = 4.0  # cap so a rate-limiting host cannot push a scan past its timeout
 _DROP_HEADERS = {"set-cookie"}
+_LOCAL_SUFFIXES = (".localhost", ".local", ".internal", ".lan", ".home.arpa")
+
+
+def private_host(host: str | None) -> bool:
+    """True for hosts that are never a public webshop: localhost, private / link-local /
+    reserved IP addresses (cloud metadata at 169.254.169.254), local-only names. Applied to
+    the scanned URL and to every redirect target, so a hostile shop or a submitted URL cannot
+    make the scanner read services on the machine or network it runs on. Limit: a public
+    name that *resolves* to a private address is not caught here (no DNS lookup)."""
+    h = (host or "").lower().strip("[]").rstrip(".")
+    if not h:
+        return False
+    try:
+        return not ipaddress.ip_address(h).is_global
+    except ValueError:
+        pass
+    last = h.rsplit(".", 1)[-1]
+    return (
+        "." not in h  # single-label names (localhost, intranet) only resolve locally
+        or h.endswith(_LOCAL_SUFFIXES)
+        or last.isdigit()  # odd IPv4 spellings (127.1, 0x7f.0.0.1): no TLD is numeric
+        or last.startswith("0x")
+    )
+
+
+class PrivateAddress(httpx.RequestError):
+    """A request (or redirect) to a private or local address was refused."""
+
+
+async def _refuse_private(request: httpx.Request) -> None:
+    if private_host(request.url.host):
+        raise PrivateAddress(
+            f"refused: private or local address ({request.url.host})", request=request
+        )
 
 
 def default_user_agent() -> str:
@@ -74,6 +109,8 @@ class PoliteClient:
             follow_redirects=True,
             max_redirects=5,
             transport=transport,
+            # Runs for every request httpx sends, including each redirect it follows.
+            event_hooks={"request": [_refuse_private]},
         )
 
     async def __aenter__(self) -> PoliteClient:
@@ -106,6 +143,8 @@ class PoliteClient:
         wait, would cut into the last `reserve_s` seconds kept for later steps.
         """
         host = (urlsplit(url).hostname or "").lower()
+        if private_host(host):
+            return FetchedResource(url=url, error=f"refused: private or local address ({host})")
         if respect_robots:
             robots = self._robots.get(host)
             if robots is not None and not robots.is_allowed(ROBOTS_TOKEN, url):
@@ -142,23 +181,22 @@ class PoliteClient:
             # no session data kept).
             self._client.cookies.clear()
             try:
-                async with self._client.stream("GET", url, headers=headers) as resp:
-                    raw = await _read_capped(resp)
+                # httpx timeouts are per read; this bounds the whole request (redirects and
+                # body included), which is what the deadline arithmetic above assumes.
+                async with asyncio.timeout(self._timeout_s):
+                    async with self._client.stream("GET", url, headers=headers) as resp:
+                        raw = await _read_capped(resp)
+            except TimeoutError:
+                return FetchedResource(
+                    url=url, error=f"request took longer than {self._timeout_s:g} s"
+                )
             except httpx.HTTPError as exc:
                 return FetchedResource(url=url, error=f"{type(exc).__name__}: {exc}")
             finally:
                 self._host_last[host] = time.monotonic()
 
-        if resp.status_code == 429:
-            # Polite backoff: the host says we are too fast -> double our interval for it.
-            self.rate_limited[host] = self.rate_limited.get(host, 0) + 1
-            current = self._host_interval.get(host, self.min_interval_s)
-            retry_after = _retry_after_s(resp.headers.get("retry-after"))
-            if retry_after:
-                self._host_not_before[host] = time.monotonic() + retry_after
-            self._host_interval[host] = min(
-                max(current * 2, self.min_interval_s * 2), MAX_BACKOFF_S
-            )
+        # Polite backoff: on 429 the host says we are too fast -> double our interval for it.
+        self.note_status(host, resp.status_code, resp.headers.get("retry-after"))
 
         return FetchedResource(
             url=url,
@@ -200,7 +238,7 @@ class PoliteClient:
         return True
 
     def note_status(self, host: str, status: int, retry_after: str | None) -> None:
-        """Feed a browser navigation's status into the same 429 backoff."""
+        """429 backoff for this host (HTTP fetches and browser navigations alike)."""
         if status != 429:
             return
         host = host.lower()

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, TypedDict
 
+import httpx
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import Send
@@ -189,21 +190,51 @@ async def ask(state: AskInput, runtime: Runtime[VisDeps]) -> dict[str, Any]:
         deps.reserved += worst
         assert deps.client is not None
         try:
-            raw = await deps.client.chat(
-                a.model,
-                q["text"],
-                engine=a.engine,
-                max_uses=cfg.run.max_searches_per_question,
-                data_collection=cfg.privacy.data_collection,
+            raw = await asyncio.wait_for(
+                deps.client.chat(
+                    a.model,
+                    q["text"],
+                    engine=a.engine,
+                    max_uses=cfg.run.max_searches_per_question,
+                    data_collection=cfg.privacy.data_collection,
+                ),
+                timeout=cfg.run.timeout_s,  # whole call incl. 429 retries (max_duration_s)
             )
         except BudgetExhausted as exc:
             deps.reserved -= worst
             deps.exhausted = str(exc)
             call.error = str(exc)
             return {"calls": [call]}
-        except (OpenRouterError, Exception) as exc:
-            deps.reserved -= worst  # a failed call is not billed by OpenRouter
+        except (OpenRouterError, httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            deps.reserved -= worst  # refused by OpenRouter or never sent: not billed
             call.error = f"{type(exc).__name__}: {str(exc)[:160]}"
+            return {"calls": [call]}
+        except Exception as exc:
+            # Sent, but no answer (timeout, dropped connection): OpenRouter may have run and
+            # billed it. Book the worst case so the caps can only be over-, never under-counted.
+            deps.reserved -= worst
+            deps.spent += worst
+            ledger.append(
+                deps.ledger_path,
+                [
+                    {
+                        "host": deps.host,
+                        "assistant": a.name,
+                        "model": a.model,
+                        "run": state["run"],
+                        "cost_usd": round(worst, 6),
+                        "usage_cost": None,
+                        "searches": None,
+                        "generation_id": None,
+                        "note": f"no answer ({type(exc).__name__}): worst case booked",
+                    }
+                ],
+            )
+            call.cost_usd = round(worst, 6)
+            call.error = (
+                f"{type(exc).__name__}: no answer, cost unknown; worst case booked "
+                f"(USD {worst:.4f})"
+            )
             return {"calls": [call]}
 
     shop = state["shop"]

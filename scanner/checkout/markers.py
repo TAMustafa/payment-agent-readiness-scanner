@@ -38,6 +38,10 @@ ADD_TO_CART = re.compile(
     r"add to (cart|bag|basket)|in winkelwagen|leg in (winkelmand|mandje))",
     re.I,
 )
+# "Toevoegen aan verlanglijst" also says "toevoegen": never an add-to-cart button.
+NOT_ADD_TO_CART = re.compile(
+    r"(verlang|wens|wish|favor|vergelijk|compare|review|beoordeling|lijst\b|\blist\b)", re.I
+)
 CHECKOUT = re.compile(
     r"(afrekenen|naar de kassa|verder naar (afrekenen|bestellen)|doorgaan naar (afrekenen|"
     r"bestellen|de kassa)|veilig afrekenen|check ?out|proceed to checkout|bestellen)",
@@ -61,12 +65,18 @@ PAYMENT_HOSTS = re.compile(
     r"worldline\.com|ogone\.com|ccv\.eu|checkout\.com|riverty\.com|afterpay\.nl|"
     r"ideal\.nl|ideal2\.nl|currencenetworks\.com|ing\.nl|rabobank\.nl|abnamro\.nl|"
     r"snsbank\.nl|asnbank\.nl|regiobank\.nl|triodos\.nl|knab\.nl|bunq\.com|"
-    r"wero-wallet\.eu|shop\.app|pay\.shopify\.com|amazonpay|google\.com/pay)$",
+    r"wero-wallet\.eu|shop\.app|pay\.shopify\.com|shopifycs\.com|"
+    # wallets: Google Pay, Amazon Pay, Apple Pay merchant sessions
+    r"pay\.google\.com|payments\.google\.com|pay(ments)?\.amazon\.[a-z.]{2,6}|"
+    r"payments-amazon\.com|amazonpay\.com|apple-pay-gateway(-cert)?\.apple\.com|"
+    r"in3\.nl|billink\.nl|payplug\.com|worldpay\.com)$",
     re.I,
 )
-# Paths that place, pay or confirm an order: never requested, whatever the method.
+# Paths that place, pay or confirm an order: never requested, whatever the method. Matched
+# against path + query string (WooCommerce places orders through `?wc-ajax=checkout`).
 ORDER_PATHS = re.compile(
-    r"(place[-_]?order|order[-_/]?(confirm|complete|submit|place)|/payment|/pay(/|$)|"
+    r"(place[-_]?order|save[-_]?order|order[-_/]?(confirm|complete|submit|place|received|pay)|"
+    r"wc-ajax=checkout|/payment|/pay([/?]|$)|"
     r"/processing|/thank[-_]?you|bestelling[-_/]?(plaatsen|afronden)|/betaling|/betalen|"
     r"checkout/(confirm|finish|submit|complete|onepage/success)|/checkouts/.+/(processing|"
     r"thank_you|payments))",

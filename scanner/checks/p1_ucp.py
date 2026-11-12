@@ -94,6 +94,15 @@ async def check(ctx: ScanContext) -> CheckResult:
                 )
             ],
         )
+    if res.status_code >= 500:
+        # A server error says nothing about whether a profile exists: not a guessed fail.
+        return result(
+            CHECK_ID,
+            ctx,
+            "error",
+            0.0,
+            [Evidence(url=url, detail=f"HTTP {res.status_code}: server error, cannot verify")],
+        )
     if res.status_code != 200:
         return result(
             CHECK_ID,

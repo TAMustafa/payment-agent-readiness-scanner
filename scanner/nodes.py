@@ -6,6 +6,7 @@ visibility / report.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,8 +23,8 @@ from scanner.checks.copy import get_guidance
 from scanner.checks.registry import REGISTRY, static_check_ids
 from scanner.deps import ScanDeps
 from scanner.fetch.agents import probe_agents
-from scanner.fetch.client import PoliteClient
-from scanner.fetch.robots import robots_from_resource
+from scanner.fetch.client import PoliteClient, private_host
+from scanner.fetch.robots import RobotsTxt, robots_from_resource
 from scanner.models import (
     RESERVE_S,
     SHOPIFY_TIMEOUT_S,
@@ -47,6 +48,9 @@ from scanner.visibility.openrouter import OpenRouterClient
 from scanner.visibility.prompts import identify, load_override
 
 Update = dict[str, Any]
+# The probe may run this long past the fetch deadline; the rest of RESERVE_S stays free for
+# the checks and the report, so an overrunning probe never costs the whole scan.
+PROBE_GRACE_S = RESERVE_S / 2
 
 
 def normalise(url: str) -> str:
@@ -58,6 +62,8 @@ def normalise(url: str) -> str:
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise ValueError(f"not a valid http(s) URL: {url!r}")
     host = parts.hostname.lower()
+    if private_host(host):
+        raise ValueError(f"not a public shop URL (private or local address): {url!r}")
     port = f":{parts.port}" if parts.port else ""
     return f"{parts.scheme}://{host}{port}"
 
@@ -102,11 +108,19 @@ async def fetch_basics(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
 
 async def _fetch_robots(client: PoliteClient, origin: str) -> FetchedResource:
     res = await client.get(origin + "/robots.txt", respect_robots=False)
+    if res.status_code == 429:
+        # The client has backed off (Retry-After honoured) before this second attempt.
+        res = await client.get(origin + "/robots.txt", respect_robots=False)
     robots = robots_from_resource(res)
     host = urlsplit(origin).hostname or ""
-    # Network error -> no robots registered: we cannot tell, and the home fetch will
-    # most likely fail the same way.
-    if robots is not None:
+    if res.status_code == 429:
+        # RFC 9309 reads any 4xx as "no robots.txt: crawl everything". A host that keeps
+        # answering "too many requests" is asking for the opposite: fetch nothing more.
+        # (D1 reports the 429 as "could not verify".)
+        client.set_robots(host, RobotsTxt.disallow_all())
+    elif robots is not None:
+        # Network error -> no robots registered: we cannot tell, and the home fetch will
+        # most likely fail the same way.
         client.set_robots(host, robots)
     return res
 
@@ -209,15 +223,27 @@ async def checkout_probe(state: ScanState, runtime: Runtime[ScanDeps]) -> Update
                 skipped_kind="disabled", skipped_reason="no checkout checks selected"
             )
         }
-    probe = await run_probe(
-        runtime.context.client,
-        state["origin"],
-        state["platform"].platform,
-        state["pages"],
-        consent=opts.checkout_consent,
-        artifacts=Path(opts.artifacts_dir) if opts.artifacts_dir else None,
-        route_hook=runtime.context.browser_route_hook,
-    )
+    client = runtime.context.client
+    left = client.time_left()
+    try:
+        probe = await asyncio.wait_for(
+            run_probe(
+                client,
+                state["origin"],
+                state["platform"].platform,
+                state["pages"],
+                consent=opts.checkout_consent,
+                artifacts=Path(opts.artifacts_dir) if opts.artifacts_dir else None,
+                route_hook=runtime.context.browser_route_hook,
+            ),
+            timeout=None if left == float("inf") else max(left + PROBE_GRACE_S, 1.0),
+        )
+    except TimeoutError:
+        # Cancelling closes the browser (session discarded); the rest of the scan is kept.
+        probe = CheckoutProbe(
+            skipped_kind="technical",
+            skipped_reason="the checkout test ran out of time before it finished",
+        )
     return {"checkout": probe}
 
 

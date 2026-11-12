@@ -135,3 +135,75 @@ def test_option_timeouts() -> None:
     assert ScanOptions().start_timeout_s == 120 and ScanOptions().max_timeout_s == 240
     fixed = ScanOptions(timeout_s=90)
     assert fixed.start_timeout_s == fixed.max_timeout_s == 90
+
+
+# --- 2026-11-12 review ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "localhost",
+        "http://127.0.0.1:8000",
+        "192.168.1.10",
+        "http://[::1]/",
+        "shop.local",
+        "10.0.0.5",
+    ],
+)
+def test_normalise_rejects_private_and_local_addresses(raw: str) -> None:
+    with pytest.raises(ValueError, match="private or local"):
+        normalise(raw)
+
+
+def test_tracing_never_uploads_page_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    from scanner.graph import enforce_trace_privacy
+
+    for name in (
+        "LANGSMITH_HIDE_INPUTS",
+        "LANGSMITH_HIDE_OUTPUTS",
+        "LANGCHAIN_HIDE_INPUTS",
+        "LANGCHAIN_HIDE_OUTPUTS",
+    ):
+        monkeypatch.setenv(name, "false")
+    enforce_trace_privacy()  # run_scan calls this before the graph starts
+    assert os.environ["LANGSMITH_HIDE_INPUTS"] == os.environ["LANGSMITH_HIDE_OUTPUTS"] == "true"
+
+
+async def test_probe_that_overruns_does_not_lose_the_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+
+    from scanner import nodes
+
+    async def stuck(*args: object, **kwargs: object) -> None:
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(nodes, "run_probe", stuck)
+    monkeypatch.setattr(nodes, "PROBE_GRACE_S", 0.0)
+    shop = FakeShop({"https://example.nl/": (200, fixture("home/woocommerce.html"))})
+    report = await asyncio.wait_for(
+        run_scan(
+            "example.nl",
+            ScanOptions(checks=["C1"], checkout=True, timeout_s=11),
+            transport=shop.transport,
+            min_interval_s=0,
+        ),
+        timeout=11,
+    )
+    c1 = report.results[0]
+    assert c1.status == "error" and "ran out of time" in c1.evidence[0].detail
+
+
+def test_hard_timeout_leaves_room_for_the_paid_visibility_run() -> None:
+    from scanner.cli import hard_timeout_s
+    from scanner.visibility.config import load_config
+
+    cfg = load_config()
+    calls = (
+        len(cfg.assistants) * cfg.run.runs * (cfg.run.brand_questions + cfg.run.category_questions)
+    )
+    assert cfg.max_duration_s() == -(-calls // cfg.run.concurrency) * cfg.run.timeout_s
+    assert hard_timeout_s(ScanOptions()) == 240
+    assert hard_timeout_s(ScanOptions(visibility=True)) == 240 + cfg.max_duration_s()

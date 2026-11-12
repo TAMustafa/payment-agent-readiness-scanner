@@ -175,10 +175,27 @@ def _probe(allow_post: bool = False) -> Any:
         ("POST", f"{ORIGIN}/checkout/place-order", True, True),  # order path, even in window
         ("GET", f"{ORIGIN}/checkouts/abc/processing", False, True),
         ("GET", f"{ORIGIN}/betaling/start", False, True),
+        # wallets and card fields (missed until 2026-11-12)
+        ("GET", "https://pay.google.com/gp/p/js/pay.js", False, True),
+        ("GET", "https://payments.amazon.nl/x", False, True),
+        ("GET", "https://static-eu.payments-amazon.com/checkout.js", False, True),
+        ("GET", "https://apple-pay-gateway.apple.com/x", False, True),
+        ("GET", "https://checkout.shopifycs.com/number", False, True),
+        # order endpoints that live in the query string or were not listed
+        ("POST", f"{ORIGIN}/?wc-ajax=checkout", True, True),
+        ("GET", f"{ORIGIN}/checkout/order-received/123/", False, True),
+        ("POST", f"{ORIGIN}/checkout/onepage/saveOrder", True, True),
+        # ... without blocking normal shop traffic
+        ("POST", f"{ORIGIN}/?wc-ajax=add_to_cart", True, False),
+        ("GET", f"{ORIGIN}/?wc-ajax=get_refreshed_fragments", False, False),
+        ("GET", "https://www.google.com/recaptcha/api.js", False, False),
+        # a shop page must not make our browser talk to the machine or network we run on
+        ("GET", "http://localhost:9222/json", False, True),
+        ("GET", "http://192.168.1.1/", False, True),
     ],
 )
 def test_guard_table(method: str, url: str, allow_post: bool, blocked: bool) -> None:
-    assert (_probe(allow_post).guard(method, url, True) is not None) is blocked
+    assert (_probe(allow_post).guard(method, url) is not None) is blocked
 
 
 # --- 3. hostile fake shops in a real browser ---------------------------------------------
@@ -203,8 +220,9 @@ ONE_PAGE = """<html><body><p>X x1</p><h2>Gegevens</h2>
 
 
 class HostileShop:
-    def __init__(self, cart_html: str) -> None:
+    def __init__(self, cart_html: str, product_html: str = PRODUCT) -> None:
         self.cart_html = cart_html
+        self.product_html = product_html
         self.added = False
         self.seen: list[tuple[str, str]] = []
 
@@ -215,7 +233,9 @@ class HostileShop:
         if not req.url.startswith(ORIGIN):
             await route.abort()
         elif path.startswith("/product/x"):
-            await route.fulfill(status=200, body=PRODUCT, content_type="text/html")
+            await route.fulfill(status=200, body=self.product_html, content_type="text/html")
+        elif path == "/sw.js":
+            await route.fulfill(status=200, body="", content_type="application/javascript")
         elif path == "/cart/add":
             self.added = True
             await route.fulfill(status=200, body="{}", content_type="application/json")
@@ -259,6 +279,24 @@ async def test_one_page_checkout_bestellen_button_is_never_clicked() -> None:
     assert ("POST", f"{ORIGIN}/order") not in shop.seen
     assert any("already is the checkout; not clicking" in s.detail for s in p.steps)
     assert p.checkout_reached and "iDEAL" in p.payment_methods
+
+
+async def test_service_workers_and_websockets_cannot_bypass_the_guard() -> None:
+    # Playwright routing does not see requests handled by a service worker, and WebSockets
+    # are a write channel of their own: both are refused outright.
+    sneaky = PRODUCT.replace(
+        "<script>",
+        "<script>navigator.serviceWorker.register('/sw.js').then("
+        "()=>0,()=>0);"
+        "new WebSocket('wss://shop.example.nl/ws');",
+        1,
+    )
+    shop = HostileShop(CART_HOSTILE, product_html=sneaky)
+    p = await _run(shop)
+    urls = [u for _, u in shop.seen]
+    assert f"{ORIGIN}/sw.js" not in urls  # the worker script is never even fetched
+    guard = next(s for s in p.steps if s.name == "safety_guard")
+    assert "websocket" in guard.detail
 
 
 async def test_checkout_probe_is_opt_in() -> None:
