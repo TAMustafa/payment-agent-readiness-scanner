@@ -20,7 +20,7 @@ from scanner.parse.html import (
     links,
 )
 from scanner.platform.fingerprint import fingerprint
-from scanner.sampling.select import sample, spread
+from scanner.sampling.select import _dedupe, same_page_key, sample, spread
 from scanner.sampling.sitemap import _child_priority
 from scanner.sampling.urls import is_catalogue_link
 from tests.conftest import FakeShop, fixture
@@ -242,3 +242,22 @@ def test_platform_product_page_without_markup() -> None:
     assert is_platform_product_page('<body class="is-ctl-product is-act-index">')
     assert not is_platform_product_page("<body>")  # no class
     assert not is_platform_product_page('<body class="single-product-list">')  # whole token
+
+
+def test_language_variants_of_one_page_are_sampled_once() -> None:
+    # stoov.com 2026-11-12: /products/x and /nl/products/x both sampled.
+    urls = [
+        "https://shop.nl/products/big-hug",
+        "https://shop.nl/nl/products/big-hug",
+        "https://shop.nl/en-gb/products/big-hug/",
+        "https://shop.nl/products/homey",
+        "https://shop.nl/nl/products/homey-2",
+    ]
+    assert _dedupe(urls) == [
+        "https://shop.nl/products/big-hug",
+        "https://shop.nl/products/homey",
+        "https://shop.nl/nl/products/homey-2",
+    ]
+    assert same_page_key("https://shop.nl/nl/") == "shop.nl/"
+    # A non-language first segment is kept.
+    assert same_page_key("https://shop.nl/tuin/bank") != same_page_key("https://shop.nl/bank")

@@ -17,6 +17,7 @@ unambiguous URL shape.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlsplit
 
@@ -66,8 +67,24 @@ def _ok(res: FetchedResource) -> bool:
     return res.status_code is not None and 200 <= res.status_code < 300 and bool(res.body)
 
 
+# A leading language segment (/nl/, /en-gb/): Shopify Markets and multi-language shops serve
+# the same product under several paths. Seen 2026-11-12 on stoov.com: /products/big-hug-s3-
+# original and /nl/products/big-hug-s3-original both sampled, wasting 1 of 5 product slots.
+LOCALE_PREFIX = re.compile(r"^/[a-z]{2}(?:[-_][a-z]{2})?(?=/)", re.I)
+
+
+def same_page_key(url: str) -> str:
+    """Host + path without a language prefix, trailing slash, query or fragment."""
+    parts = urlsplit(url)
+    path = LOCALE_PREFIX.sub("", parts.path).rstrip("/").lower() or "/"
+    return f"{parts.netloc.lower()}{path}"
+
+
 def _dedupe(urls: list[str]) -> list[str]:
-    return list(dict.fromkeys(urls))
+    seen: dict[str, str] = {}
+    for u in urls:
+        seen.setdefault(same_page_key(u), u)
+    return list(seen.values())
 
 
 @dataclass
@@ -152,9 +169,11 @@ class _Run:
             ],
             self.max_products,
         )
-        already = {p.url for p in self.out.categories + self.out.products}
+        already = {same_page_key(p.url) for p in self.out.categories + self.out.products}
         candidates = [
-            u for u in _dedupe(from_sitemap + shaped + unshaped + generic) if u not in already
+            u
+            for u in _dedupe(from_sitemap + shaped + unshaped + generic)
+            if same_page_key(u) not in already
         ]
 
         max_probes = int(self.max_products * MAX_PROBES_FACTOR)

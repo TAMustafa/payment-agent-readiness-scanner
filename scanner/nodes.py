@@ -25,6 +25,8 @@ from scanner.fetch.agents import probe_agents
 from scanner.fetch.client import PoliteClient
 from scanner.fetch.robots import robots_from_resource
 from scanner.models import (
+    RESERVE_S,
+    SHOPIFY_TIMEOUT_S,
     AgentEndpoints,
     CheckoutProbe,
     CheckResult,
@@ -109,8 +111,12 @@ async def _fetch_robots(client: PoliteClient, origin: str) -> FetchedResource:
     return res
 
 
-async def fingerprint_platform(state: ScanState) -> Update:
-    return {"platform": fingerprint(state["basics"].home)}
+async def fingerprint_platform(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
+    platform = fingerprint(state["basics"].home)
+    if platform.platform == "shopify" and state["options"].timeout_s is None:
+        # Shopify rate-limits polite crawlers: give sampling more time (models.SHOPIFY_TIMEOUT_S).
+        runtime.context.client.extend_budget(SHOPIFY_TIMEOUT_S - RESERVE_S)
+    return {"platform": platform}
 
 
 async def sample_pages(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
@@ -287,6 +293,17 @@ async def render_report(state: ScanState, runtime: Runtime[ScanDeps]) -> Update:
             Evidence(detail=f"Host rate-limited us (HTTP 429) {n}x on {h}; slowed down")
             for h, n in runtime.context.client.rate_limited.items()
         ]
+        + (
+            [
+                Evidence(
+                    detail="Scan time extended to "
+                    f"{runtime.context.client.budget_extended_to + RESERVE_S:.0f} s for Shopify "
+                    "(rate-limits polite crawlers)"
+                )
+            ]
+            if runtime.context.client.budget_extended_to is not None
+            else []
+        )
         + (
             [Evidence(detail="Fetching stopped early: scan time budget reached")]
             if runtime.context.client.stopped_for_time

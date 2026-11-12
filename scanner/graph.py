@@ -23,13 +23,11 @@ from langgraph.types import RetryPolicy
 from scanner import nodes
 from scanner.deps import ScanDeps
 from scanner.fetch.client import PoliteClient
-from scanner.models import ScanOptions, ScanReport
+from scanner.models import RESERVE_S, ScanOptions, ScanReport
 from scanner.state import RunCheckInput, ScanState
 
 # Retries only on network nodes, never on checks (CLAUDE.md).
 NETWORK_RETRY = RetryPolicy(max_attempts=3, initial_interval=1.0)
-# Time kept back from the scan timeout for checks + report once fetching stops.
-RESERVE_S = 10.0
 
 
 def build_graph() -> CompiledStateGraph[ScanState, ScanDeps, ScanState, ScanState]:
@@ -91,7 +89,7 @@ async def run_scan(
         max_requests=opts.max_pages,
         min_interval_s=min_interval_s,
         transport=transport,
-        time_budget_s=max(opts.timeout_s - RESERVE_S, 1.0),
+        time_budget_s=max(opts.start_timeout_s - RESERVE_S, 1.0),
     ) as client:
         deps = ScanDeps(
             client=client,

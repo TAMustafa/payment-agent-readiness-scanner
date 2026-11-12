@@ -34,7 +34,7 @@ implementing any check.
 - **Scoring revision (2026-11-12):** two verdicts ("Found by AI agents" / "Orders and
   payments"), stage minimum 50 %, overall grade only when both are graded, P2/P3 folded into
   the P1 fix, C3 unverifiable → not measured, P1 warns without payment handler/checkout.
-  SPEC §5; log in `docs/VERIFY.md`. 289 tests green.
+  SPEC §5; log in `docs/VERIFY.md`. 296 tests green.
 - **Logs:** `docs/VERIFY.md` (reference shops, every verification run, known limits),
   `docs/SAFETY.md` (what the scanner can never do to a shop, and the tests that prove it).
 - **Repo:** github.com/TAMustafa/payment-agent-readiness-scanner, branch `main`. Tarek commits
@@ -72,7 +72,7 @@ why, keep it minimal, pin it. Check current LangGraph docs
 2. **Polite crawling.** Identify as `AgentReadyScanner/<version> (+contact URL)`
    (`SCANNER_CONTACT_URL`), respect robots.txt for our own user agent, max 1 request/second
    per host (doubled on 429, Retry-After honoured), max ~40 pages per scan, hard timeout per
-   scan (default 120s). Never solve or bypass captchas / bot challenges — report them.
+   scan (default 120s; 240s automatically for Shopify, `--timeout` fixes it). Never solve or bypass captchas / bot challenges — report them.
 3. **No secrets in code or logs.** API keys via `.env` (gitignored; V1 uses only
    `OPENROUTER_API_KEY`); keep `.env.example` current. LangSmith tracing must not log full page HTML or any personal data.
 4. **Deterministic and explainable.** Every check returns evidence (URL, snippet, header,
@@ -93,6 +93,9 @@ why, keep it minimal, pin it. Check current LangGraph docs
   polite crawlers: 429 + Retry-After 60 after ~2 product pages).
 - D2 test requests carry the bot's User-Agent **plus** our identity — never impersonate.
 - Live probe runs on third-party shops need Tarek's approval (reference shops: once each).
+- **Shopify scans get 240 s (2026-11-12):** the fetch budget is extended after the
+  fingerprint (`nodes.fingerprint_platform`, `models.SHOPIFY_TIMEOUT_S`); an explicit
+  `--timeout` is never extended. Reason: 120 s gave 0 product pages on stoov.com.
 - **V1 (2026-11-09):** OpenRouter only; **max EUR 10/month** (USD 10 cap enforced by the
   OpenRouter key limit, a local ledger and a pre-scan estimate); ChatGPT + Gemini with
   native search; prompts from the shop's categories via fixed Dutch templates; 2 runs; plain
@@ -202,12 +205,14 @@ guessed `fail`); nothing to test → `not_applicable`; emerging standards (P3) �
 
 ## Commands
 - `uv sync` then `uv run playwright install chromium`
-- `uv run scanner scan https://example.nl --out scans/` (report.json + report.html +
+- `uv run --env-file .env scanner scan https://example.nl --out scans/` (report.json + report.html +
   screenshots; `--lang en` for English)
 - `uv run scanner report scans/<host>/<ts>/report.json [--lang en]` (re-render HTML offline)
-- `uv run scanner scan https://example.nl --checks D,S --json`
+- `uv run --env-file .env scanner scan https://example.nl --checks D,S --json`
+- Always pass `--env-file .env` for live scans: it carries `SCANNER_CONTACT_URL` (Tarek's
+  site, set 2026-11-12), which shops see in our User-Agent; without it the CLI warns.
 - `uv run scanner graph` (Mermaid of the pipeline)
 - `uv run ruff check . && uv run mypy scanner`
 - `uv run --env-file .env scanner scan https://example.nl --visibility --out scans/` (V1, paid)
-- `uv run pytest` (≈13 s, 289 tests; probe tests drive real headless Chromium against fake
+- `uv run pytest` (≈13 s, 296 tests; probe tests drive real headless Chromium against fake
   shops; V1 tests use a fake OpenRouter — no paid calls)

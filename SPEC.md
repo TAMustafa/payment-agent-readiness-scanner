@@ -2,7 +2,8 @@
 
 ## 1. Goal and success criteria
 Produce, for any public Dutch webshop URL, a scored report (0–100) with evidence and the
-top 5 fixes, in under 2 minutes, without any write interaction with the shop.
+top 5 fixes, in under 2 minutes (4 minutes for Shopify shops, decided 2026-11-12), without
+any write interaction with the shop.
 
 v1 is done when:
 - [ ] Scans complete without crash on all 5 reference shops (section 7).
@@ -215,5 +216,6 @@ how, and what is not.
 - (added 2026-11-08) Effort sizes S/M/L per check (initial estimates in `registry.py`)
 - (added 2026-11-08) D5 thresholds: ≤ 5 % disapproved = pass, ≤ 20 % = warn (initial choice)
 - (added 2026-11-08) §6 support table: differences found vs. current vendor sources (above)
-- (added 2026-11-08) Shopify shops yield 0–2 product pages per polite scan; accept, or
-  allow a longer scan for S-checks?
+- ~~(added 2026-11-08) Shopify shops yield 0–2 product pages per polite scan; accept, or
+  allow a longer scan for S-checks?~~ — longer scan: 240 s automatically when the
+  fingerprint says Shopify (2026-11-12; stoov.com 0 → 5 product pages)

@@ -9,7 +9,7 @@ from scanner.checks.registry import REGISTRY, CheckSpec, static_check_ids
 from scanner.graph import build_graph, run_scan
 from scanner.models import CheckResult, ScanContext, ScanOptions, ScanReport
 from scanner.nodes import normalise
-from tests.conftest import FakeShop
+from tests.conftest import FakeShop, fixture
 
 
 async def offline_scan(options: ScanOptions | None = None) -> ScanReport:
@@ -106,3 +106,32 @@ async def test_one_failing_check_does_not_abort_others(monkeypatch: pytest.Monke
     assert by_id["P2.platform_support"].status == "error"
     assert "RuntimeError: simulated bug" in by_id["P2.platform_support"].evidence[0].detail
     assert by_id["D1.robots_ai_crawlers"].status == "pass"
+
+
+@pytest.mark.parametrize(
+    ("home", "fixed_s", "extended"),
+    [
+        ("shopify", None, True),  # automatic: Shopify gets 240 s
+        ("woocommerce", None, False),  # automatic: others keep 120 s
+        ("shopify", 120.0, False),  # explicit --timeout is never extended
+    ],
+)
+async def test_shopify_scans_get_more_time(
+    home: str, fixed_s: float | None, extended: bool
+) -> None:
+    shop = FakeShop({"https://example.nl/": (200, fixture(f"home/{home}.html"))})
+    report = await run_scan(
+        "example.nl",
+        ScanOptions(checks=["D1"], timeout_s=fixed_s),
+        transport=shop.transport,
+        min_interval_s=0,
+    )
+    assert (report.platform.platform == "shopify") == (home == "shopify")
+    notes = " | ".join(n.detail for n in report.sampling_notes)
+    assert ("Scan time extended to 240 s for Shopify" in notes) == extended
+
+
+def test_option_timeouts() -> None:
+    assert ScanOptions().start_timeout_s == 120 and ScanOptions().max_timeout_s == 240
+    fixed = ScanOptions(timeout_s=90)
+    assert fixed.start_timeout_s == fixed.max_timeout_s == 90

@@ -338,3 +338,44 @@ HTML checked by headless screenshots at 900 px and 390 px (duifhuizen.nl, fixje.
 Consequence for sales: a free (default) scan grades only "Found by AI agents"; the
 "Orders and payments" verdict needs the consent scan (`--checkout-consent`).
 289 tests green. No live scans run.
+
+### 2026-11-12 — stoov.com (Shopify) with `--timeout 240` (approved by Tarek)
+
+Question: does a longer scan limit get enough product pages from a Shopify shop that
+rate-limits polite crawlers? Read-only default scan (no checkout test, no V1), 19:32 UTC,
+2 days after the previous stoov.com scan.
+
+| | 2026-11-10, 120 s | 2026-11-12, 240 s |
+|---|---|---|
+| Product pages | 0 | 5 (9 fetched, 4 rejected; 3× HTTP 429, slowed down) |
+| Measured weight | 38 % | 81 % |
+| S1–S5, D2, D4 | not measured | measured |
+| Found by AI agents | no grade | 84.4 Ready |
+| Orders and payments | – | not measured (no checkout test) |
+
+Wall time 3 min 33 s, 22 requests. Categories still 0 (time budget used up by products);
+they only feed V1 prompts. **Conclusion: 240 s turns a useless Shopify report into a usable
+one.** Decided by Tarek the same day: automatic 240 s for Shopify (see below).
+
+Manual check (1 extra GET of /products/big-hug-s3-original) found **2 false results**:
+1. **S5 false fail:** "Reviews appear to be shown" matched "4.3 | 17,117 reviews", the
+   shop-wide Trustpilot score in every product page footer. The product has no reviews
+   (Okendo `reviewCount: null`). Fix: a "<n> reviews" text that appears on ≥ 2 sampled product
+   pages is a shop widget and is ignored. Checked offline on the saved page. Limit: two
+   different products with exactly the same review count would also be ignored.
+2. **Duplicate sample:** `/products/big-hug-s3-original` and `/nl/products/big-hug-s3-original`
+   were both sampled (1 of 5 slots wasted, and it would defeat fix 1). Fix: URLs are deduped on
+   the path without a language prefix (`/nl/`, `/en-gb/`). Limit: a real 2-letter first
+   path segment (e.g. `/tv/…`) is treated as a language prefix for dedupe only.
+Other results matched the page: S4 fail (no shippingDetails / hasMerchantReturnPolicy in the
+Product JSON-LD), S1 one page without description, P1–P3 pass (Shopify UCP profile live).
+Also seen: `SCANNER_CONTACT_URL` is still the `example.invalid` placeholder in `.env`.
+291 tests green. Fixes not re-verified live (do not re-scan stoov.com today).
+
+**Follow-up (same day):** Shopify scans now get 240 s automatically. The scan starts with the
+120 s budget; when the fingerprint says Shopify, the fetch deadline moves to 230 s (240 − 10 s
+reserve) and the report notes "Scan time extended to 240 s for Shopify". `--timeout N` fixes
+the limit and is never extended. Covered by 5 new tests (296 green); not yet run live.
+Contact URL set 2026-11-12: `SCANNER_CONTACT_URL=https://tarek-ai.com/portfolio/` in `.env`
+(HTTP 200 checked). Earlier live scans ran without `--env-file .env` and sent the
+`contact-url-not-configured.invalid` placeholder; use `uv run --env-file .env scanner scan …`.

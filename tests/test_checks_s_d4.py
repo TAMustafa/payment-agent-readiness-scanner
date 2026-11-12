@@ -215,6 +215,25 @@ def test_shop_rating_tolerates_small_count_drift() -> None:
     assert not looks_like_shop_rating([("4.5", 12.0), ("4.5", 40.0)])
 
 
+async def test_s5_ignores_a_shop_wide_review_widget() -> None:
+    # stoov.com 2026-11-12: "4.3 | 17,117 reviews" (Trustpilot) in every product page footer,
+    # no product reviews -> was a false fail, must be not_applicable.
+    def product(slug: str, extra: str = "") -> FetchedResource:
+        body = (
+            f"<html><body><h1>{slug}</h1>{extra}"
+            "<footer>What our customers say 4.3 | 17,117 reviews</footer></body></html>"
+        )
+        return FetchedResource(url=f"{ORIGIN}/products/{slug}", status_code=200, body=body)
+
+    c = ctx([])
+    c.pages.products = [product("a"), product("b"), product("c")]
+    assert (await s5_reviews.check(c)).status == "not_applicable"
+    # A product that also shows its own review count is still measured.
+    c.pages.products[0] = product("a", "<p>23 reviews</p>")
+    r = await s5_reviews.check(c)
+    assert r.status == "fail" and "23 reviews" in str(r.evidence)
+
+
 async def test_s6_errors_when_home_is_a_challenge_page() -> None:
     c = ctx([], home="<html><title>Just a moment...</title></html>")
     assert c.basics.home is not None

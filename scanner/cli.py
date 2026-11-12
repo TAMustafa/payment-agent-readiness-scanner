@@ -47,7 +47,13 @@ def scan(
         Path | None,
         typer.Option("--visibility-prompts", help="Own V1 questions: text file, one per line"),
     ] = None,
-    timeout: Annotated[float, typer.Option("--timeout", help="Hard scan timeout, seconds")] = 120.0,
+    timeout: Annotated[
+        float | None,
+        typer.Option(
+            "--timeout",
+            help="Hard scan timeout, seconds (default: 120, or 240 when the shop runs on Shopify)",
+        ),
+    ] = None,
     gmc_active: Annotated[
         bool | None,
         typer.Option("--gmc-active/--gmc-inactive", help="D5 manual input: Merchant Center feed"),
@@ -100,9 +106,11 @@ def scan(
         lang=report_lang,
     )
     try:
-        report = asyncio.run(asyncio.wait_for(run_scan(url, options), timeout=timeout))
+        report = asyncio.run(
+            asyncio.wait_for(run_scan(url, options), timeout=options.max_timeout_s)
+        )
     except TimeoutError:
-        typer.echo(f"Scan exceeded hard timeout of {timeout:.0f}s", err=True)
+        typer.echo(f"Scan exceeded hard timeout of {options.max_timeout_s:.0f}s", err=True)
         raise typer.Exit(code=2) from None
     except ValueError as exc:
         typer.echo(str(exc), err=True)

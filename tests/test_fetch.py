@@ -128,3 +128,18 @@ async def test_reserve_refuses_request_that_would_eat_kept_time(
     assert refused.error and "kept for later" in refused.error and c.reserve_hit
     assert allowed.status_code == 404 and not c.stopped_for_time
     assert shop.paths() == ["/b"]
+
+
+async def test_budget_can_be_extended_but_never_shortened(
+    make_shop: Callable[..., FakeShop],
+) -> None:
+    shop = make_shop()
+    async with PoliteClient(transport=shop.transport, min_interval_s=0, time_budget_s=10) as c:
+        before = c.time_left()
+        c.extend_budget(5)  # shorter: ignored
+        assert c.time_left() <= before and c.budget_extended_to is None
+        c.extend_budget(230)
+        assert c.time_left() > 200 and c.budget_extended_to == 230
+    async with PoliteClient(transport=shop.transport, min_interval_s=0) as unbounded:
+        unbounded.extend_budget(230)  # no budget at all: stays unbounded
+        assert unbounded.time_left() == float("inf")

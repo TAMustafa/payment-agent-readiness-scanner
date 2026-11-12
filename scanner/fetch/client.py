@@ -56,7 +56,9 @@ class PoliteClient:
         self.max_probe_requests = max_probe_requests
         self.probe_requests_made = 0
         # Stop fetching before the scan's hard timeout so a partial report still renders.
-        self._deadline = time.monotonic() + time_budget_s if time_budget_s else None
+        self._started = time.monotonic()
+        self._deadline = self._started + time_budget_s if time_budget_s else None
+        self.budget_extended_to: float | None = None  # seconds, when extend_budget() was used
         self.stopped_for_time = False
         self.reserve_hit = False  # a request was refused to protect a later step's time
         self._robots: dict[str, RobotsTxt] = {}
@@ -208,6 +210,15 @@ class PoliteClient:
             self._host_not_before[host] = time.monotonic() + ra
         current = self._host_interval.get(host, self.min_interval_s)
         self._host_interval[host] = min(max(current * 2, self.min_interval_s * 2), MAX_BACKOFF_S)
+
+    def extend_budget(self, time_budget_s: float) -> None:
+        """Move the fetch deadline later (never earlier), counted from the client's start."""
+        if self._deadline is None:
+            return
+        new = self._started + time_budget_s
+        if new > self._deadline:
+            self._deadline = new
+            self.budget_extended_to = time_budget_s
 
     def time_left(self) -> float:
         """Seconds until the fetch deadline (inf when no time budget is set)."""

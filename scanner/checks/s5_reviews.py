@@ -4,6 +4,9 @@ Google requires ratingValue and at least one of ratingCount / reviewCount
 (https://developers.google.com/search/docs/appearance/structured-data/review-snippet).
 A page counts only if it has rating markup or visibly shows product reviews (heuristic:
 "<n> reviews / beoordelingen / recensies" in the page text). No such page -> not_applicable.
+The same "<n> reviews" text on two or more sampled product pages is a shop-wide widget
+(Trustpilot, Kiyoh, ...), not product reviews, and is ignored (2026-11-12: stoov.com showed
+"4.3 | 17,117 reviews" in the footer of every product page, S5 was a false fail).
 """
 
 from __future__ import annotations
@@ -23,11 +26,26 @@ REVIEWS_SHOWN = re.compile(
 )
 
 
-def score(page: FetchedResource) -> PageScore | None:
+def review_mentions(page: FetchedResource) -> list[str]:
+    """Normalised "<n> reviews" texts visible on the page."""
+    text = visible_text(page.body or "")
+    return [" ".join(m.group(0).lower().split()) for m in REVIEWS_SHOWN.finditer(text)]
+
+
+def shop_wide_mentions(pages: list[FetchedResource]) -> set[str]:
+    """Review counts that appear on two or more product pages: a shop-level widget."""
+    counts: dict[str, int] = {}
+    for p in pages:
+        for m in set(review_mentions(p)):
+            counts[m] = counts.get(m, 0) + 1
+    return {m for m, n in counts.items() if n >= 2}
+
+
+def score(page: FetchedResource, ignore: frozenset[str] = frozenset()) -> PageScore | None:
     html = page.body or ""
     d = product_data(html)
     rating = first_dict(d.product.get("aggregateRating")) if d.source else None
-    shown = REVIEWS_SHOWN.search(visible_text(html))
+    shown = next((m for m in review_mentions(page) if m not in ignore), None)
     if rating is None:
         if not shown:
             return None  # no reviews shown, no markup: not applicable to this page
@@ -35,7 +53,7 @@ def score(page: FetchedResource) -> PageScore | None:
             page.url,
             0.0,
             "Reviews appear to be shown but no aggregateRating markup",
-            snippet=shown.group(0),
+            snippet=shown,
         )
     value = rating.get("ratingValue")
     count = rating.get("reviewCount") or rating.get("ratingCount")
@@ -64,7 +82,8 @@ def looks_like_shop_rating(keys: list[tuple[str, float]]) -> bool:
 
 
 async def check(ctx: ScanContext) -> CheckResult:
-    res = score_pages(CHECK_ID, ctx, score)
+    ignore = frozenset(shop_wide_mentions(ctx.pages.products))
+    res = score_pages(CHECK_ID, ctx, lambda page: score(page, ignore))
     keys = [k for k in (_rating_key(p) for p in ctx.pages.products) if k]
     if looks_like_shop_rating(keys) and res.status == "pass":
         # Same rating on every product page = shop-level rating (e.g. a review widget)

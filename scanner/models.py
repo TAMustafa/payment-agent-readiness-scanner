@@ -42,17 +42,37 @@ class CheckResult(BaseModel):
 # --- Scan inputs -----------------------------------------------------------------------
 
 
+DEFAULT_TIMEOUT_S = 120.0
+# Shopify rate-limits polite crawlers (429 + Retry-After): 120 s yielded 0 product pages on
+# stoov.com, 240 s yielded 5 (docs/VERIFY.md 2026-11-12). Decided by Tarek 2026-11-12.
+SHOPIFY_TIMEOUT_S = 240.0
+# Time kept back from the scan timeout for checks + report once fetching stops.
+RESERVE_S = 10.0
+
+
 class ScanOptions(BaseModel):
     checks: list[str] | None = None  # None = all enabled checks
     visibility: bool = False  # V1 costs money -> opt-in
     visibility_prompts_file: str | None = None  # operator override: one question per line
-    timeout_s: float = 120.0
+    # None = automatic: DEFAULT_TIMEOUT_S, extended to SHOPIFY_TIMEOUT_S once the platform
+    # fingerprint says Shopify. A number = fixed hard timeout (--timeout), never extended.
+    timeout_s: float | None = None
     max_pages: int = 40
     # Small samples so rate-limiting shops (Shopify 429 + Retry-After 60) still yield data
     # within the time budget; decided 2026-11-08 over longer scans.
     max_products: int = 8
     max_categories: int = 2
     lang: Literal["nl", "en"] = "en"  # English default (Tarek, 2026-11-10)
+
+    @property
+    def start_timeout_s(self) -> float:
+        return self.timeout_s if self.timeout_s is not None else DEFAULT_TIMEOUT_S
+
+    @property
+    def max_timeout_s(self) -> float:
+        """Upper bound for the outer hard timeout (the CLI's asyncio.wait_for)."""
+        return self.timeout_s if self.timeout_s is not None else SHOPIFY_TIMEOUT_S
+
     # D5 manual input (never guessed): Merchant Center feed active + disapproval percentage
     merchant_center_active: bool | None = None
     merchant_center_disapproved_pct: float | None = Field(default=None, ge=0, le=100)
