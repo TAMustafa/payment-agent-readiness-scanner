@@ -57,14 +57,7 @@ def make_report(results: list[CheckResult], **extra: object) -> ScanReport:
         "platform": PlatformInfo(platform="woocommerce"),
         "sampled": {"products": ["https://shop.example.nl/p/1"], "categories": []},
         "requests_made": 12,
-        "score": s.score,
-        "grade": s.grade,
-        "coverage": s.coverage,
-        "excluded_checks": s.excluded_checks,
-        "not_run": s.not_run,
-        "stages": s.stages,
-        "out_of_scope": s.out_of_scope,
-        "top_fixes": s.top_fixes,
+        **s.report_fields(),
         "results": results,
         "lang": "nl",  # most assertions below check the Dutch copy; English is the default
         **extra,
@@ -73,17 +66,25 @@ def make_report(results: list[CheckResult], **extra: object) -> ScanReport:
 
 
 def sample_results() -> list[CheckResult]:
+    # find: access 4/19, data 16/28 -> 20/47 = 42.6 Not ready
+    # buy: checkout 15/15, protocols 1.5/10 -> 16.5/25 = 66 Partly ready
+    # overall 36.5/72 = 50.7 Not ready; unmeasured: D2, S5 (excluded) + C4, C5, D5 (not run)
     return [
         res("D1.robots_ai_crawlers", "fail", 0.0),
         res("D2.edge_blocking", "error", 0.0),
+        res("D3.sitemap", "fail", 0.0),
+        res("D4.rendering", "pass", 1.0),
         res("S1.product_jsonld", "pass", 1.0),
         res("S2.offer", "warn", 0.5),
         res("S3.identifiers", "pass", 1.0),
         res("S4.shipping_returns", "fail", 0.0),
+        res("S5.reviews", "not_applicable", 0.0),
+        res("S6.organization", "fail", 0.0),
         res("C1.add_to_cart", "pass", 1.0),
         res("C2.guest_checkout", "pass", 1.0),
-        res("S5.reviews", "not_applicable", 0.0),  # out of scope
-        res("S6.organization", "fail", 0.0),  # out of scope
+        res("C3.payment_methods", "pass", 1.0),
+        res("P1.ucp_profile", "fail", 0.0),
+        res("P2.platform_support", "warn", 0.5),
         res("P3.mcp_or_feed_endpoint", "warn", 0.0),
     ]
 
@@ -107,11 +108,13 @@ def test_nl_report_sections_follow_the_agent_order() -> None:
     ]
     positions = [html.index(h) for h in order]
     assert positions == sorted(positions)
-    assert "Niet klaar" in html  # 27 earned / 51 measured weight = 52.9
+    assert "Gevonden worden" in html and "Bestellen en betalen" in html  # two verdicts
+    assert "Totaal: 50.7 van 100 — Niet klaar" in html
+    assert "Deels klaar" in html  # buy: 66
     assert "AI-bots toegestaan in robots.txt" in html  # Dutch label
     assert "Niet te controleren" in html  # D2 error
-    assert "10 van 19 checks konden we niet meten" in html
-    assert "1/4 gemeten" in html  # access: only D1 counted (D2 error, D3/D4 not run)
+    assert "5 van 19 checks konden we niet meten" in html
+    assert "3/4 gemeten" in html  # access: D2 error
 
 
 def test_dropped_sections_are_gone() -> None:
@@ -139,7 +142,7 @@ def test_every_in_scope_check_has_a_why_box() -> None:
 
 def test_fix_box_only_when_failing_or_warning() -> None:
     html = render_html(make_report(sample_results()))
-    assert html.count("class='box guide'") == 5  # D1, S2, S4, S6, P3
+    assert html.count("class='box guide'") == 8  # D1, D3, S2, S4, S6, P1, P2, P3
 
 
 def test_en_fallback_and_guidance_from_copy() -> None:
@@ -195,8 +198,27 @@ def test_unmeasured_check_shows_one_evidence_line() -> None:
 def test_low_coverage_report_says_so() -> None:
     rs = [res("D1.robots_ai_crawlers", "pass", 1.0), res("C5.policies_clear", "pass", 1.0)]
     html = render_html(make_report(rs))
-    assert "Te weinig gemeten voor een oordeel" in html and "voorlopig" in html
+    assert "Nog niet genoeg gemeten" in html and "voorlopig" in html
     assert "Klaar" not in text_of(html).replace("Klaar voor AI-shoppingagents", "")
+    assert "<b>100</b>" not in html  # no provisional number on a dial (was "100" at 13 %)
+
+
+def test_buy_part_without_checkout_test_has_no_number() -> None:
+    rs = [r for r in sample_results() if not r.id.startswith(("C1", "C2"))]
+    html = render_html(make_report(rs), lang="en")
+    assert "We measure ordering and paying with the checkout test" in html
+    assert html.count("<b>&ndash;</b>") == 1  # find is graded, buy shows a dash
+
+
+def test_folded_fix_lists_what_it_also_fixes() -> None:
+    report = make_report(sample_results())
+    html = render_html(report, lang="en")
+    fixes = html[html.index("<ol class=fixes>") : html.index("</ol>")]
+    ids = [f.check_id for f in report.top_fixes]
+    assert "P1.ucp_profile" in ids
+    assert "P2.platform_support" not in ids and "P3.mcp_or_feed_endpoint" not in ids
+    names = ", ".join(REGISTRY[i].label for i in ("P2.platform_support", "P3.mcp_or_feed_endpoint"))
+    assert f"Also fixes: {names}" in fixes
 
 
 def test_no_score_report_renders() -> None:
@@ -238,7 +260,7 @@ def test_cli_report_rescores_saved_json(tmp_path: Path) -> None:
     out = CliRunner().invoke(app, ["report", str(path), "--lang", "en"])
     assert out.exit_code == 0, out.output
     html = (tmp_path / "report.html").read_text(encoding="utf-8")
-    assert "52.9" in html and "Not ready" in html and "Do first" in html
+    assert "Overall: 50.7 out of 100" in html and "Not ready" in html and "Do first" in html
 
 
 def test_cli_rejects_unknown_lang(tmp_path: Path) -> None:

@@ -98,7 +98,55 @@ def test_low_coverage_gives_no_grade() -> None:
     rs.append(res("S2.offer", "pass", 1.0))
     rs.append(res("S1.product_jsonld", "pass", 1.0))
     rs.append(res("S3.identifiers", "pass", 1.0))  # 25 + 20 = 45 of 90 = 50 %
-    assert summarise(rs).grade == "Ready"
+    s2 = summarise(rs)
+    assert s2.coverage == 0.5
+    # 50 % overall, but the checkout stage (1 of 20 weight) is unmeasured -> no overall grade
+    assert s2.grade is None
+    parts = {p.part: p for p in s2.parts}
+    assert parts["find"].grade == "Ready"  # access 17/27, product data 20/33: both >= 50 %
+    assert parts["buy"].grade is None and parts["buy"].unmeasured_stages == ["checkout"]
+    rs += [res(i, "pass", 1.0) for i in ("C1.add_to_cart", "C2.guest_checkout")]
+    s3 = summarise(rs)
+    assert {p.part: p.grade for p in s3.parts} == {"find": "Ready", "buy": "Ready"}
+    assert s3.grade == "Ready"
+
+
+def test_stage_needs_half_its_weight_for_a_score() -> None:
+    # A default scan: only C3 + C5 (6 of 20) measured used to show "Check out: 100".
+    rs = [res("C3.payment_methods", "pass", 1.0), res("C5.policies_clear", "pass", 1.0)]
+    checkout = {s.stage: s for s in stage_scores(rs)}["checkout"]
+    assert checkout.score is None and checkout.scorable_weight == 6
+    rs.append(res("C2.guest_checkout", "fail", 0.0))  # 12 of 20
+    checkout = {s.stage: s for s in stage_scores(rs)}["checkout"]
+    assert checkout.score == 50.0
+
+
+def test_buy_verdict_weighs_payments_on_their_own() -> None:
+    # Discovery perfect, checkout and protocols poor: overall looks fine, "buy" does not.
+    rs = [res(i, "pass", 1.0) for _, ids in STAGES[:2] for i in ids]
+    rs += [res(i, "fail", 0.0) for _, ids in STAGES[2:] for i in ids]
+    s = summarise(rs)
+    parts = {p.part: p for p in s.parts}
+    assert parts["find"].score == 100.0 and parts["find"].grade == "Ready"
+    assert parts["buy"].score == 0.0 and parts["buy"].grade == "Not ready"
+    assert s.score == round(100 * 60 / 90, 1) and s.grade == "Partly ready"
+
+
+def test_ucp_dependent_fixes_are_folded_into_p1() -> None:
+    rs = [
+        res("P1.ucp_profile", "fail", 0.0),  # 5
+        res("P2.platform_support", "warn", 0.5),  # 1.5, follows from P1
+        res("P3.mcp_or_feed_endpoint", "warn", 0.0),  # 2, follows from P1
+        res("S4.shipping_returns", "fail", 0.0),
+    ]
+    fixes = top_fixes(rs)
+    assert [f.check_id for f in fixes] == ["P1.ucp_profile", "S4.shipping_returns"]
+    p1 = fixes[0]
+    assert p1.also_fixes == ["P2.platform_support", "P3.mcp_or_feed_endpoint"]
+    assert p1.points_available == 8.5 and p1.priority == round(8.5 / 3, 2)
+    # Without a failing P1 (e.g. profile blocked -> error), P3 is a fix of its own.
+    rs[0] = res("P1.ucp_profile", "error", 0.0)
+    assert "P3.mcp_or_feed_endpoint" in [f.check_id for f in top_fixes(rs)]
 
 
 def test_nothing_scorable_gives_no_score() -> None:

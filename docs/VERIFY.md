@@ -310,3 +310,31 @@ pages), S4 fail, C5 pass (shipping cost, delivery time, return window stated), P
   not verify". **The fixes are verified offline against fixje.nl's real HTML, not live.**
   Suggestion for the next run: `--timeout 240` so sampling has time after the 429 back-off.
 - 279 tests green.
+
+### 2026-11-12 — scoring revision: payments get their own verdict
+
+Review finding: the report overstated checkout/payment readiness. Re-scoring the 13 saved
+scans showed "Check out: 100" from 2 of 5 checks (duifhuizen.nl, also hema.nl 94, jhparts.nl
+89) and grades for shops whose checkout was never tested. Changes (SPEC §4/§5):
+- **Stage minimum:** no stage score below 50 % of its weight measured.
+- **Two verdicts:** "Found by AI agents" (stages 1–2) and "Orders and payments" (stages 3–4),
+  each graded only when all its stages have a score. Overall grade only when both are graded.
+- **Dials:** a number only with a grade (thuisbezorgd.nl showed a provisional "100" at 11 %).
+- **Top fixes:** P2/P3 folded into the P1 fix (duifhuizen.nl had P1, P2, P3 as 3 of 5 fixes).
+- **C3:** unverifiable → `error` (fixje.nl 20:40 had "no payment info found" as fix #1, +10.8).
+- **P1:** valid profile without payment handler or checkout capability → warn 0.7.
+
+Re-scored saved scans (offline; C3/P1 changes apply only to new scans):
+| Shop (scan) | Overall | Found by AI agents | Orders and payments |
+|---|---|---|---|
+| duifhuizen.nl (20:57) | 78.9, no grade (was Partly ready) | 88.2 Ready | not measured (no checkout test) |
+| fixje.nl (20:15, with probe) | 61.1 Partly ready | 76.3 Partly ready | 21.4 Not ready |
+| hema.nl | 72.4, no grade (was Partly ready) | 79.2 Partly ready | not measured |
+| jhparts.nl | 73.8, no grade (was Partly ready) | 82.0 Ready | not measured |
+| dille-kamille.nl | 66.2, no grade (was Partly ready) | 78.9 Partly ready | not measured |
+| stoov.com / thuisbezorgd.nl | no grade (unchanged) | no grade (no product pages) | not measured |
+
+HTML checked by headless screenshots at 900 px and 390 px (duifhuizen.nl, fixje.nl).
+Consequence for sales: a free (default) scan grades only "Found by AI agents"; the
+"Orders and payments" verdict needs the consent scan (`--checkout-consent`).
+289 tests green. No live scans run.

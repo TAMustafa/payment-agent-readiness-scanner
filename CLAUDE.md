@@ -31,6 +31,10 @@ implementing any check.
   `scanner/report/`; open points at the end of `docs/VERIFY.md` (merchant test, brand name).
 - **Then:** pilots with real merchants; step 5 (web front-end) only after pilots.
 - **Audit 2026-11-10:** `docs/AUDIT.md` (specs + customer-ready report; open items at the end).
+- **Scoring revision (2026-11-12):** two verdicts ("Found by AI agents" / "Orders and
+  payments"), stage minimum 50 %, overall grade only when both are graded, P2/P3 folded into
+  the P1 fix, C3 unverifiable → not measured, P1 warns without payment handler/checkout.
+  SPEC §5; log in `docs/VERIFY.md`. 289 tests green.
 - **Logs:** `docs/VERIFY.md` (reference shops, every verification run, known limits),
   `docs/SAFETY.md` (what the scanner can never do to a shop, and the tests that prove it).
 - **Repo:** github.com/TAMustafa/payment-agent-readiness-scanner, branch `main`. Tarek commits
@@ -205,5 +209,5 @@ guessed `fail`); nothing to test → `not_applicable`; emerging standards (P3) �
 - `uv run scanner graph` (Mermaid of the pipeline)
 - `uv run ruff check . && uv run mypy scanner`
 - `uv run --env-file .env scanner scan https://example.nl --visibility --out scans/` (V1, paid)
-- `uv run pytest` (≈13 s, 283 tests; probe tests drive real headless Chromium against fake
+- `uv run pytest` (≈13 s, 289 tests; probe tests drive real headless Chromium against fake
   shops; V1 tests use a fake OpenRouter — no paid calls)

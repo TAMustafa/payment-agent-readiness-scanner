@@ -18,10 +18,12 @@ from urllib.parse import urlsplit
 
 from scanner.checks.copy import get_guidance
 from scanner.checks.registry import REGISTRY
-from scanner.models import CheckResult, ScanReport, StageScore
+from scanner.models import CheckResult, PartScore, ScanReport, StageScore
 from scanner.report.i18n import (
     EFFORT,
     GRADE,
+    PART,
+    PART_QUESTION,
     PLATFORM_NAME,
     PLATFORM_OTHER,
     STAGE,
@@ -34,7 +36,7 @@ from scanner.report.i18n import (
     label,
     t,
 )
-from scanner.report.scoring import IN_SCOPE, STAGES
+from scanner.report.scoring import IN_SCOPE, MIN_COVERAGE, STAGES, part_scores
 
 DEFAULT_BRAND = "Agent-Ready Scan"
 MAX_EVIDENCE = 3  # per check in HTML; the full list stays in report.json
@@ -56,18 +58,20 @@ h3{font-size:17px;margin:28px 0 2px}.q{color:var(--muted);margin:0 0 8px}
 .meta{color:var(--muted);margin:0}.meta a{color:inherit}
 .intro{background:#fff8e6;border:1px solid #f2d48a;border-radius:10px;padding:12px 14px;
 margin:20px 0 0}
-.summary{display:flex;gap:24px;align-items:center;flex-wrap:wrap;background:var(--panel);
-border-radius:12px;padding:20px;margin-top:16px}
-.dial{width:132px;height:132px;border-radius:50%;display:grid;place-items:center;
-flex:none}.dial div{width:104px;height:104px;border-radius:50%;background:var(--panel);
-display:grid;place-items:center;text-align:center}.dial b{font-size:34px;line-height:1}
-.dial small{display:block;color:var(--muted);font-size:12px}
-.grade{font-size:22px;font-weight:700;margin:0 0 4px}.summary p{margin:2px 0}
-.bars{flex:1 1 320px}
-.bar{display:grid;grid-template-columns:minmax(0,1fr) 120px 40px 88px;
+.verdicts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.summary{background:var(--panel);border-radius:12px;padding:16px;break-inside:avoid}
+.summary .top{display:flex;gap:14px;align-items:center}
+.summary h2{border:0;margin:0;padding:0;font-size:17px}.summary p{margin:2px 0}
+.dial{width:104px;height:104px;border-radius:50%;display:grid;place-items:center;
+flex:none}.dial div{width:80px;height:80px;border-radius:50%;background:var(--panel);
+display:grid;place-items:center;text-align:center}.dial b{font-size:28px;line-height:1}
+.dial small{display:block;color:var(--muted);font-size:11px}
+.grade{font-size:19px;font-weight:700;margin:0 0 2px}.bars{margin-top:10px}
+.overall{margin:10px 0 0}
+.bar{display:grid;grid-template-columns:minmax(0,1fr) 72px 34px auto;
 gap:10px;align-items:center;margin:6px 0}.track{height:10px;background:var(--line);
 border-radius:5px;overflow:hidden}.fill{display:block;height:100%;border-radius:5px}
-.num{text-align:right;font-variant-numeric:tabular-nums}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 ol.fixes{padding-left:0;list-style:none;counter-reset:f}ol.fixes li{counter-increment:f;
 border:1px solid var(--line);border-radius:10px;padding:12px 14px 12px 52px;margin:10px 0;
 position:relative;break-inside:avoid}ol.fixes li::before{content:counter(f);position:absolute;
@@ -90,6 +94,7 @@ border-radius:999px;color:#fff;white-space:nowrap}
 code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--panel);
 padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}.muted{color:var(--muted)}
 footer{margin-top:40px;color:var(--muted);font-size:12px}
+@media (max-width:640px){.verdicts{grid-template-columns:1fr}}
 @media (max-width:560px){.bar{grid-template-columns:minmax(0,1fr) 40px 84px;
 gap:2px 8px}.bar>span:first-child{grid-column:1/-1}}
 @media print{main{padding:0;max-width:none}h2,h3{break-after:avoid}a{color:inherit}}
@@ -131,34 +136,59 @@ def _bar(s: StageScore, lang: Lang) -> str:
     )
 
 
-def _summary(report: ScanReport, lang: Lang) -> str:
-    low = report.score is not None and report.grade is None
-    if report.score is None:
-        dial_inner = "<b>&ndash;</b>"
-        grade = esc(UI["no_score"][lang])
+def _dial(score: float | None, small: str) -> str:
+    """Score ring; `score=None` shows a dash (not measured enough for a number)."""
+    if score is None:
+        inner, bg = "<b>&ndash;</b>", "var(--line)"
     else:
-        sub = UI["provisional" if low else "score_of"][lang]
-        dial_inner = f"<b>{_fmt(report.score)}</b><small>{esc(sub)}</small>"
-        grade = esc(UI["low_coverage"][lang] if low else t(GRADE, report.grade or "", lang))
-    pct = report.score or 0.0
-    color = "var(--na)" if low else _color(report.score)
-    dial_bg = f"conic-gradient({color} {pct * 3.6:.1f}deg, var(--line) 0)"
-    unmeasured = report.excluded_checks + len(report.not_run)
-    if low:
-        text = UI["low_coverage_note"][lang].format(pct=round(100 * report.coverage))
-        note = f"<p class=muted>{esc(text)}</p>"
-    elif unmeasured:
-        text = UI["excluded"][lang].format(n=unmeasured, m=len(IN_SCOPE))
-        note = f"<p class=muted>{esc(text)}</p>"
+        inner = f"<b>{_fmt(score)}</b><small>{esc(small)}</small>"
+        bg = f"conic-gradient({_color(score)} {score * 3.6:.1f}deg, var(--line) 0)"
+    return f'<div class=dial style="background:{bg}"><div>{inner}</div></div>'
+
+
+def _part(p: PartScore, stages: dict[str, StageScore], report: ScanReport, lang: Lang) -> str:
+    # A number only with a grade: a provisional "100" over 11 % of the checks misleads.
+    shown = p.score if p.grade is not None else None
+    if p.grade is not None:
+        verdict, note = t(GRADE, p.grade, lang), ""
     else:
-        note = ""
-    bars = "".join(_bar(s, lang) for s in report.stages)
+        verdict = UI["part_not_measured"][lang]
+        if p.part == "buy" and "checkout" in p.unmeasured_stages and not report.checkout_tested:
+            note = UI["buy_needs_checkout"][lang]
+        elif p.unmeasured_stages:
+            names = ", ".join(t(STAGE, n, lang) for n in p.unmeasured_stages)
+            note = UI["part_low"][lang].format(stages=names)
+        else:
+            note = UI["low_coverage_note"][lang].format(pct=round(100 * p.coverage))
+    bars = "".join(_bar(stages[n], lang) for n in p.stages if n in stages)
+    note_html = f"<p class=muted>{esc(note)}</p>" if note else ""
     return (
-        "<section class=summary>"
-        f'<div class=dial style="background:{dial_bg}"><div>{dial_inner}</div></div>'
-        f"<div class=bars><p class=grade>{grade}</p>{note}{bars}</div>"
-        "</section>"
+        f"<section class=summary><div class=top>{_dial(shown, UI['score_of'][lang])}<div>"
+        f"<h2>{esc(t(PART, p.part, lang))}</h2>"
+        f"<p class=muted>{esc(t(PART_QUESTION, p.part, lang))}</p>"
+        f"<p class=grade>{esc(verdict)}</p></div></div>{note_html}"
+        f"<div class=bars>{bars}</div></section>"
     )
+
+
+def _summary(report: ScanReport, lang: Lang) -> str:
+    if report.score is None:
+        return f"<section class=summary><p class=grade>{esc(UI['no_score'][lang])}</p></section>"
+    stages = {s.stage: s for s in report.stages}
+    parts = report.parts or part_scores(report.stages)
+    panels = "".join(_part(p, stages, report, lang) for p in parts)
+    if report.coverage < MIN_COVERAGE:
+        text = UI["low_coverage_note"][lang].format(pct=round(100 * report.coverage))
+    elif report.grade is not None:
+        text = UI["overall"][lang].format(
+            score=_fmt(report.score), grade=t(GRADE, report.grade, lang)
+        )
+        unmeasured = report.excluded_checks + len(report.not_run)
+        if unmeasured:
+            text += " · " + UI["excluded"][lang].format(n=unmeasured, m=len(IN_SCOPE))
+    else:
+        text = UI["overall_none"][lang]
+    return f"<div class=verdicts>{panels}</div><p class='overall muted'>{esc(text)}</p>"
 
 
 def _guidance(r_id: str, stored: str, lang: Lang) -> str:
@@ -178,10 +208,14 @@ def _fixes(report: ScanReport, lang: Lang) -> str:
                 f"{esc(t(EFFORT, f.effort, lang))} {esc(UI['effort'][lang])}",
             ]
         )
+        also = ""
+        if f.also_fixes:
+            names = ", ".join(label(i, REGISTRY[i].label, lang) for i in f.also_fixes)
+            also = f"<div class=tags>{esc(UI['also_fixes'][lang].format(items=names))}</div>"
         items.append(
             f"<li><div class=fixhead>{esc(label(f.check_id, f.label, lang))}</div>"
             f"<div class=tags>{tags}</div>"
-            f"<div>{esc(_guidance(f.check_id, f.guidance, lang))}</div></li>"
+            f"<div>{esc(_guidance(f.check_id, f.guidance, lang))}</div>{also}</li>"
         )
     intro = UI["top_fixes_intro"][lang].format(n=len(report.top_fixes))
     return head + f"<p class=muted>{esc(intro)}</p><ol class=fixes>{''.join(items)}</ol>"

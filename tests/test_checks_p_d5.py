@@ -110,6 +110,23 @@ async def test_p1_spec_errors_and_hosting_issues() -> None:
     assert "Cache-Control should be public" in details(r2)
 
 
+async def test_p1_profile_that_cannot_take_orders_is_a_warning() -> None:
+    base = json.loads(SHOPIFY_UCP)
+    no_pay = json.loads(SHOPIFY_UCP)
+    no_pay["ucp"]["payment_handlers"] = {}
+    r = await p1_ucp.check(ctx(res(UCP_URL, 200, json.dumps(no_pay), GOOD_HEADERS)))
+    assert r.status == "warn" and r.score_fraction == 0.7
+    assert "Orders: no payment handler declared" in details(r)
+    no_checkout = json.loads(SHOPIFY_UCP)
+    del no_checkout["ucp"]["capabilities"]["dev.ucp.shopping.checkout"]
+    r2 = await p1_ucp.check(ctx(res(UCP_URL, 200, json.dumps(no_checkout), GOOD_HEADERS)))
+    assert r2.status == "warn" and "no checkout capability" in details(r2)
+    # Order gaps and hosting issues add up.
+    r3 = await p1_ucp.check(ctx(res(UCP_URL, 200, json.dumps(no_pay), {})))
+    assert r3.status == "warn" and r3.score_fraction == 0.5
+    assert base["ucp"]["payment_handlers"]  # the fixture itself passes (see above)
+
+
 async def test_p1_html_or_blocked() -> None:
     html = res(UCP_URL, 200, "<!doctype html><html>shop</html>")
     soft = await p1_ucp.check(ctx(html))

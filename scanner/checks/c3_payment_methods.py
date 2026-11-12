@@ -11,8 +11,11 @@ iDEAL / Wero stay required for the Dutch customer (bank redirect, handed back to
 Sources: the checkout page (probe), the home page and policy pages (payment logos and text).
 Privacy pages are excluded: they list data processors (e.g. Klarna), not payment methods.
 Pass: a card option (Visa, Mastercard, Amex, or the card wallets Apple Pay / Google Pay) AND
-iDEAL or Wero. One of the two: warn (0.5). Neither: fail when the probe saw the checkout,
-otherwise warn (missing logos on home/policy pages are not proof).
+iDEAL or Wero. One of the two: warn (0.5). Neither: fail when the probe saw the checkout.
+Unverifiable -> error, never a guessed warn/fail (changed 2026-11-12): no payment
+information at all, or neither cards nor iDEAL/Wero on home/policy pages while the checkout
+was not inspected (missing logos are not proof), or a checkout entry page without any
+payment marker (the payment choice is usually a later step, which the probe never opens).
 """
 
 from __future__ import annotations
@@ -35,16 +38,15 @@ async def check(ctx: ScanContext) -> CheckResult:
         for m in payment_methods_in(payment_haystack(page.body or "")):
             found.setdefault(m, page.final_url or page.url)
     if not found:
+        detail = (
+            "No payment methods visible on the first checkout page; the payment choice is "
+            "probably a later step, which we never open, so we cannot tell"
+            if ctx.checkout.checkout_reached
+            else "No payment method information on the home or policy pages and checkout "
+            "not inspected, so we cannot tell which payment methods are offered"
+        )
         return result(
-            CHECK_ID,
-            ctx,
-            "warn",
-            0.0,
-            [
-                Evidence(
-                    detail="No payment method information found on checkout, home or policy pages"
-                )
-            ],
+            CHECK_ID, ctx, "error", 0.0, [Evidence(url=ctx.checkout.checkout_url, detail=detail)]
         )
     evidence = [Evidence(url=url, detail=f"{m} shown") for m, url in sorted(found.items())]
     dutch = [m for m in DUTCH if m in found]
@@ -76,8 +78,8 @@ async def check(ctx: ScanContext) -> CheckResult:
     evidence.insert(
         0,
         Evidence(
-            detail="Cards and iDEAL / Wero not listed on the home or policy pages "
-            "(checkout not inspected, so not proof they are missing)"
+            detail="Cards and iDEAL / Wero not listed on the home or policy pages and checkout "
+            "not inspected, so we cannot tell which payment methods are offered"
         ),
     )
-    return result(CHECK_ID, ctx, "warn", 0.3, evidence)
+    return result(CHECK_ID, ctx, "error", 0.0, evidence)

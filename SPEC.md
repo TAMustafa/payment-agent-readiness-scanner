@@ -89,7 +89,10 @@ If the probe cannot reach checkout for a technical reason → `error`, not `fail
   as one interstitial).
 - The probe runs before the check fan-out, so C-checks are plain functions over its data.
 - C3: privacy pages are not a source (they list processors); `fail` only when the checkout
-  page itself was seen without iDEAL/Wero, otherwise `warn`.
+  page itself was seen without cards and iDEAL/Wero. *Changed 2026-11-12:* unverifiable →
+  `error` (not measured), never a guessed warn: no payment information at all, neither found
+  on home/policy pages without the checkout test, or a checkout entry page without any
+  payment marker (the payment step comes later and is never opened).
 - The probe is **opt-in** (`--checkout`, or `--checkout-consent` for merchant-requested
   scans); default scans report C1, C2 and C4 as "not tested".
 - D2 test requests carry the bot's User-Agent plus our own identity (no impersonation).
@@ -97,7 +100,7 @@ If the probe cannot reach checkout for a technical reason → `error`, not `fail
 ### Category P — Agent protocols (10)
 | ID | Check | Weight | Criteria |
 |---|---|---|---|
-| P1.ucp_profile | `/.well-known/ucp` returns valid JSON profile | 5 | Validate against current spec at ucp.dev (fetch schema; cite version) |
+| P1.ucp_profile | `/.well-known/ucp` returns valid JSON profile | 5 | Validate against current spec at ucp.dev (fetch schema; cite version). *2026-11-12:* no payment handler or no checkout capability declared → warn (−0.3): agents can read but not pay |
 | P2.platform_support | Platform has an available agentic channel/plugin (lookup table, section 6) | 3 | Informational scoring: pass if enabled, warn if available but not enabled |
 | P3.mcp_or_feed_endpoint | Public MCP endpoint or agent-readable product feed discoverable | 2 | warn, never fail, in v1 (emerging) |
 Report copy must state: agent checkout via ACP/UCP is not yet live in NL; P-checks
@@ -129,8 +132,19 @@ The bullets below apply within that scope.
 - Score = Σ(weight × scoreFraction) over checks not `not_applicable`/`error`,
   re-normalised to 100. Show how many checks were excluded.
 - Grade: ≥80 Ready · 60–79 Partly ready · <60 Not ready.
+- *Changed 2026-11-12 (Tarek: "improve the scoring"):* a default scan measured 2 of 5
+  checkout checks and still showed "Check out: 100" and a grade; payments were drowned out by
+  the larger discovery weight. Now:
+  - A **stage** gets no score below 50 % of its weight measured.
+  - Two **verdicts**, each scored over its own checks and graded only when all its stages
+    have a score: **Found by AI agents** (stages 1–2) and **Orders and payments** (stages
+    3–4). "Orders and payments" therefore needs the checkout test (consent scan).
+  - The **overall grade** needs both verdicts graded (and ≥ 50 % coverage); the overall score
+    stays in `report.json` and is shown as one line when graded.
+  - The HTML shows a dial number only with a grade (no provisional numbers).
 - Top 5 fixes: sort failing/warning checks by (weight × (1−scoreFraction)) / effortFactor
-  (S=1, M=2, L=3).
+  (S=1, M=2, L=3). *2026-11-12:* P2 and P3 follow from a valid UCP profile and are folded into
+  the P1 fix ("also fixes"; their points are added) when P1 is itself a fix.
 - Report sections: summary + score, top 5 fixes, category details with evidence,
   "what's coming" (agent checkout in NL), methodology + limitations.
 - Language: Dutch report with English fallback; all guidance strings stored per check in

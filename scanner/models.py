@@ -256,6 +256,18 @@ class StageScore(BaseModel):
     excluded: list[str] = Field(default_factory=list)  # ids not_applicable / error / not run
 
 
+class PartScore(BaseModel):
+    """One of the two headline verdicts (scanner.report.scoring.PARTS, 2026-11-12):
+    "find" (stages access + product_data) and "buy" (stages checkout + protocols)."""
+
+    part: str  # "find" | "buy"
+    score: float | None  # 0..100 over the part's scorable checks; None = nothing scorable
+    grade: Grade | None  # None: coverage below the minimum or a stage not measured
+    coverage: float = 0.0  # measured share of the part's weight (0..1)
+    stages: list[str] = Field(default_factory=list)
+    unmeasured_stages: list[str] = Field(default_factory=list)  # stage score is None
+
+
 class Fix(BaseModel):
     """One of the top fixes: (weight x (1 - score_fraction)) / effort factor (SPEC §5)."""
 
@@ -268,6 +280,9 @@ class Fix(BaseModel):
     score_gain: float  # points the 0..100 score rises when fixed fully (re-normalised)
     effort: Effort
     guidance: str
+    # Checks that pass once this fix is done (e.g. P2/P3 follow a valid UCP profile); their
+    # points are included in points_available / score_gain and they are not listed separately.
+    also_fixes: list[str] = Field(default_factory=list)
 
 
 class ScanReport(BaseModel):
@@ -286,6 +301,7 @@ class ScanReport(BaseModel):
     excluded_checks: int  # in-scope results not_applicable / error (not in the score)
     not_run: list[str] = Field(default_factory=list)  # in-scope ids with no result at all
     stages: list[StageScore] = Field(default_factory=list)
+    parts: list[PartScore] = Field(default_factory=list)  # "find" / "buy" verdicts
     # Checks that ran but are outside the report's scope (only V1, the paid AI-visibility
     # snapshot): kept here in `results`, not scored, not in the HTML (decided 2026-11-10).
     out_of_scope: list[str] = Field(default_factory=list)

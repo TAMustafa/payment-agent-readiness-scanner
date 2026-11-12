@@ -133,18 +133,7 @@ def report(
         # Always re-score with the current rules: older reports have no score (before
         # build step 4) or were scored over all checks (before the agent-order scope).
         s = summarise(saved.results)
-        saved = saved.model_copy(
-            update={
-                "score": s.score,
-                "grade": s.grade,
-                "coverage": s.coverage,
-                "excluded_checks": s.excluded_checks,
-                "not_run": s.not_run,
-                "stages": s.stages,
-                "out_of_scope": s.out_of_scope,
-                "top_fixes": s.top_fixes,
-            }
-        )
+        saved = saved.model_copy(update=s.report_fields())
     target = out or report_json.with_name("report.html")
     target.write_text(
         render_html(saved, lang=_lang(lang) if lang else None, brand=_brand()), encoding="utf-8"

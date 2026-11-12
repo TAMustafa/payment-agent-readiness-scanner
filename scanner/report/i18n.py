@@ -33,10 +33,6 @@ UI: dict[str, dict[Lang, str]] = {
         "nl": "Geen score: er was niets dat we betrouwbaar konden meten.",
         "en": "No score: nothing could be measured reliably.",
     },
-    "low_coverage": {
-        "nl": "Te weinig gemeten voor een oordeel",
-        "en": "Too little measured to judge",
-    },
     "low_coverage_note": {
         "nl": "We konden maar {pct}% van de checks (naar gewicht) meten, bijvoorbeeld omdat de "
         "shop ons afremde. De score is voorlopig; een nieuwe scan of een scan op jouw verzoek "
@@ -46,6 +42,31 @@ UI: dict[str, dict[Lang, str]] = {
         "request gives the full picture.",
     },
     "provisional": {"nl": "voorlopig", "en": "provisional"},
+    "overall": {
+        "nl": "Totaal: {score} van 100 — {grade}",
+        "en": "Overall: {score} out of 100 — {grade}",
+    },
+    "overall_none": {
+        "nl": "Een totaaloordeel geven we pas als beide onderdelen gemeten zijn.",
+        "en": "We give an overall grade only when both parts have been measured.",
+    },
+    "part_not_measured": {
+        "nl": "Nog niet genoeg gemeten",
+        "en": "Not measured enough yet",
+    },
+    "buy_needs_checkout": {
+        "nl": "Afrekenen en betalen meten we met de checkout-test, die we alleen met jouw "
+        "toestemming doen. Zonder die test geven we hier geen score.",
+        "en": "We measure ordering and paying with the checkout test, which we only run with "
+        "your permission. Without it we give no score here.",
+    },
+    "part_low": {
+        "nl": "We konden te weinig meten voor een score ({stages} niet gemeten). Een nieuwe "
+        "scan of een scan op jouw verzoek geeft een volledig beeld.",
+        "en": "We could measure too little for a score ({stages} not measured). A new scan or "
+        "a scan at your request gives the full picture.",
+    },
+    "also_fixes": {"nl": "Lost ook op: {items}", "en": "Also fixes: {items}"},
     "excluded": {
         "nl": "{n} van {m} checks konden we niet meten; de score gaat over de rest.",
         "en": "{n} of {m} checks could not be measured; the score covers the rest.",
@@ -91,9 +112,10 @@ UI: dict[str, dict[Lang, str]] = {
     },
     "m_checkout_off": {
         "nl": "De checkout-test doen we alleen met jouw toestemming; zonder die test blijven "
-        "drie checkout-checks ongemeten.",
+        'drie checkout-checks ongemeten en krijgt het onderdeel "bestellen en betalen" geen '
+        "score.",
         "en": "We only run the checkout test with your permission; without it three checkout "
-        "checks stay unmeasured.",
+        'checks stay unmeasured and the "orders and payments" part gets no score.',
     },
     "m_d2": {
         "nl": "Bottoegang testen we met de User-Agent van elke AI-bot plus onze eigen naam; "
@@ -224,6 +246,22 @@ EFFORT: dict[str, dict[Lang, str]] = {
     "S": {"nl": "weinig", "en": "small"},
     "M": {"nl": "gemiddeld", "en": "medium"},
     "L": {"nl": "veel", "en": "large"},
+}
+
+PART: dict[str, dict[Lang, str]] = {
+    "find": {"nl": "Gevonden worden", "en": "Found by AI agents"},
+    "buy": {"nl": "Bestellen en betalen", "en": "Orders and payments"},
+}
+
+PART_QUESTION: dict[str, dict[Lang, str]] = {
+    "find": {
+        "nl": "Kunnen AI-agents je shop vinden en je aanbod begrijpen?",
+        "en": "Can AI agents find your shop and understand your offer?",
+    },
+    "buy": {
+        "nl": "Kan een AI-agent bij je bestellen en betalen?",
+        "en": "Can an AI agent order and pay at your shop?",
+    },
 }
 
 STAGE: dict[str, dict[Lang, str]] = {

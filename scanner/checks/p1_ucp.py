@@ -8,6 +8,9 @@ Validated against the UCP specification version 2026-08-25
 - services: reverse-domain keys -> entries with `transport` in rest|mcp|a2a|embedded;
 - artifacts carry Cache-Control with `public` and max-age >= 60.
 No JSON Schema URL for the profile is published, so these rules are checked directly.
+Order readiness (added 2026-11-12): a spec-valid profile that declares no payment handler, or
+a capabilities registry without `dev.ucp.shopping.checkout`, lets agents read the shop but
+not pay through UCP -> warn (-0.3), not a full pass.
 Agent checkout via UCP is not live for Dutch merchants yet: this measures readiness.
 """
 
@@ -24,6 +27,21 @@ CHECK_ID = "P1.ucp_profile"
 SPEC_VERSION = "2026-08-25"
 TRANSPORTS = frozenset({"rest", "mcp", "a2a", "embedded"})
 NEEDS_ENDPOINT = frozenset({"rest", "mcp", "a2a"})
+
+
+def order_gaps(profile: Any) -> list[str]:
+    """Why agents could not order and pay through this (spec-valid) profile."""
+    ucp = profile.get("ucp") if isinstance(profile, dict) else None
+    if not isinstance(ucp, dict):
+        return []
+    gaps: list[str] = []
+    handlers = ucp.get("payment_handlers")
+    if isinstance(handlers, dict) and not handlers:
+        gaps.append("no payment handler declared: agents cannot pay through UCP yet")
+    caps = ucp.get("capabilities")
+    if isinstance(caps, dict) and "dev.ucp.shopping.checkout" not in caps:
+        gaps.append("no checkout capability declared: agents cannot place orders through UCP")
+    return gaps
 
 
 def validate(profile: Any) -> tuple[list[str], list[str]]:
@@ -49,9 +67,7 @@ def validate(profile: Any) -> tuple[list[str], list[str]]:
             elif t in NEEDS_ENDPOINT and not e.get("endpoint"):
                 errors.append(f"service {name}: {t} transport without endpoint")
     handlers = ucp.get("payment_handlers")
-    if isinstance(handlers, dict) and not handlers:
-        notes.append("no payment handler declared: agents cannot pay through UCP yet")
-    elif isinstance(handlers, dict):
+    if isinstance(handlers, dict) and handlers:
         notes.append(f"payment handlers: {', '.join(sorted(handlers))}")
     caps = ucp.get("capabilities") or {}
     if isinstance(caps, dict) and caps:
@@ -135,14 +151,17 @@ async def check(ctx: ScanContext) -> CheckResult:
         )
     ]
     evidence += [Evidence(url=url, detail=f"Spec error: {e}") for e in errors]
+    gaps = order_gaps(profile) if not errors else []
+    evidence += [Evidence(url=url, detail=f"Orders: {g}") for g in gaps]
     evidence += [Evidence(url=url, detail=f"Hosting: {h}") for h in hosting]
     evidence += [Evidence(url=url, detail=f"Note: {n}") for n in notes]
 
     status: CheckStatus
     if errors:
         status, fraction = "fail", 0.5
-    elif hosting:
-        status, fraction = "warn", 0.8
+    elif hosting or gaps:
+        status = "warn"
+        fraction = round(1.0 - (0.2 if hosting else 0.0) - (0.3 if gaps else 0.0), 2)
     else:
         status, fraction = "pass", 1.0
     return result(CHECK_ID, ctx, status, fraction, evidence)

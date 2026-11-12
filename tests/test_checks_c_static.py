@@ -58,17 +58,26 @@ async def test_c3_from_footer_logos_and_payment_page() -> None:
     )
     assert (await c3_payment_methods.check(seen)).status == "fail"
     processors = ctx(policies={"privacy": page("/privacy", "<p>Wij delen data met Klarna</p>")})
-    assert (await c3_payment_methods.check(processors)).status == "warn"
+    # Unverifiable -> error (not measured), never a guessed warn that costs points.
+    assert (await c3_payment_methods.check(processors)).status == "error"
     assert "Klarna" not in str((await c3_payment_methods.check(processors)).evidence)
     nothing = await c3_payment_methods.check(ctx())
-    assert nothing.status == "warn"
+    assert nothing.status == "error" and "cannot tell" in nothing.evidence[0].detail
+    paypal_only = await c3_payment_methods.check(
+        ctx(policies={"payment": page("/betaalmethoden", "<p>PayPal</p>")})
+    )
+    assert paypal_only.status == "error"  # checkout not inspected: missing logos aren't proof
+    entry_only = await c3_payment_methods.check(
+        ctx(probe=CheckoutProbe(checkout_reached=True, checkout_url=f"{ORIGIN}/checkout"))
+    )
+    assert entry_only.status == "error" and "later step" in entry_only.evidence[0].detail
 
 
 async def test_c3_ignores_challenge_home_page() -> None:
     c = ctx(home="<html><title>Just a moment...</title>ideal</html>")
     assert c.basics.home is not None
     c.basics.home.status_code = 403
-    assert (await c3_payment_methods.check(c)).status == "warn"
+    assert (await c3_payment_methods.check(c)).status == "error"
 
 
 async def test_c5_policy_text() -> None:
