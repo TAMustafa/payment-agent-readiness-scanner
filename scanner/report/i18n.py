@@ -35,11 +35,23 @@ UI: dict[str, dict[Lang, str]] = {
     },
     "low_coverage_note": {
         "nl": "We konden maar {pct}% van de checks (naar gewicht) meten, bijvoorbeeld omdat de "
-        "shop ons afremde. De score is voorlopig; een nieuwe scan of een scan op jouw verzoek "
-        "geeft een volledig beeld.",
+        "shop ons afremde. Daarom geven we nog geen score; een nieuwe scan of een scan op "
+        "jouw verzoek geeft een volledig beeld.",
         "en": "We could only measure {pct}% of the checks (by weight), for example because "
-        "the shop slowed us down. The score is provisional; a new scan or a scan at your "
+        "the shop slowed us down, so we give no score yet. A new scan or a scan at your "
         "request gives the full picture.",
+    },
+    "blocked_note": {
+        "nl": "Je site weigerde onze scanner (botbeveiliging), dus we konden bijna niets meten. "
+        "Dat kan een bewuste instelling zijn. Controleer wel of de agents van AI-assistenten "
+        "(ChatGPT, Gemini, Perplexity) worden doorgelaten: blokkeert je beveiliging die ook, "
+        "dan kunnen AI-agents je shop niet vinden en er niet bestellen. Een scan op jouw "
+        "verzoek, waarbij je onze scanner doorlaat, geeft een volledig beeld.",
+        "en": "Your site refused our scanner (bot protection), so we could measure almost "
+        "nothing. That can be a deliberate setting. Do check that the agents of AI "
+        "assistants (ChatGPT, Gemini, Perplexity) are let through: if your protection blocks "
+        "them too, AI agents cannot find your shop or order from it. A scan at your request, "
+        "with our scanner let through, gives the full picture.",
     },
     "provisional": {"nl": "voorlopig", "en": "provisional"},
     "overall": {
@@ -73,6 +85,10 @@ UI: dict[str, dict[Lang, str]] = {
     },
     "measured": {"nl": "{n}/{m} gemeten", "en": "{n}/{m} measured"},
     "top_fixes": {"nl": "Eerst doen", "en": "Do first"},
+    "top_fix_intro_one": {
+        "nl": "De verbetering die het meeste oplevert voor de minste moeite.",
+        "en": "The fix that gains the most for the least work.",
+    },
     "top_fixes_intro": {
         "nl": "De {n} verbeteringen die het meeste opleveren voor de minste moeite.",
         "en": "The {n} fixes that gain the most for the least work.",

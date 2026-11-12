@@ -7,6 +7,8 @@ Emerging area: warn, never fail, in v1 (SPEC §4 P). Read-only discovery, no JSO
   https://modelcontextprotocol.io/seps/2127-mcp-server-cards.md
 - /llms.txt (agent-readable site summary; partial credit only).
 The MCP spec itself defines no /.well-known/mcp path, so none is probed.
+Unverifiable -> error (2026-11-12, thuisbezorgd.nl): when nothing was found and the UCP
+profile or AI catalog was refused (401/403/429) or not fetched, we cannot tell, so no warn.
 """
 
 from __future__ import annotations
@@ -18,6 +20,11 @@ from scanner.checks.base import result
 from scanner.models import CheckResult, Evidence, FetchedResource, ScanContext
 
 CHECK_ID = "P3.mcp_or_feed_endpoint"
+REFUSED = (401, 403, 429)
+
+
+def _unverifiable(res: FetchedResource | None) -> bool:
+    return res is None or res.status_code is None or res.status_code in REFUSED
 
 
 def _json(res: FetchedResource | None) -> Any:
@@ -87,5 +94,13 @@ async def check(ctx: ScanContext) -> CheckResult:
             ("llms.txt", ep.llms_txt),
         )
     )
+    if not has_llms and (_unverifiable(ep.ucp) or _unverifiable(ep.ai_catalog)):
+        evidence.append(
+            Evidence(
+                detail="The agent endpoints refused our scanner or could not be fetched "
+                f"({statuses}), so we cannot tell whether an MCP endpoint exists"
+            )
+        )
+        return result(CHECK_ID, ctx, "error", 0.0, evidence)
     evidence.append(Evidence(detail=f"No MCP endpoint discoverable ({statuses})"))
     return result(CHECK_ID, ctx, "warn", 0.5 if has_llms else 0.0, evidence)

@@ -169,6 +169,15 @@ async def test_p3_mcp_from_ucp_catalog_llms() -> None:
     nothing = await p3_endpoints.check(ctx(llms=soft404))
     assert nothing.status == "warn" and nothing.score_fraction == 0.0  # never fail in v1
 
+    # thuisbezorgd.nl 2026-11-12: endpoints refused (403) -> cannot tell, not a warn/fix.
+    blocked = await p3_endpoints.check(
+        ctx(res(UCP_URL, 403, ""), catalog=res(f"{ORIGIN}/.well-known/ai-catalog.json", 403, ""))
+    )
+    assert blocked.status == "error" and "cannot tell" in details(blocked)
+    # llms.txt found next to a refused profile: still measured (partial credit).
+    blocked_llms = await p3_endpoints.check(ctx(res(UCP_URL, 403, ""), llms=llms))
+    assert blocked_llms.status == "warn" and blocked_llms.score_fraction == 0.5
+
 
 # --- D5 --------------------------------------------------------------------------------
 

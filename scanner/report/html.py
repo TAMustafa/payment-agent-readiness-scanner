@@ -171,13 +171,28 @@ def _part(p: PartScore, stages: dict[str, StageScore], report: ScanReport, lang:
     )
 
 
+BLOCKED_MARKER = "blocks all automated clients"  # D2 evidence when even our baseline is refused
+
+
+def site_blocked(report: ScanReport) -> bool:
+    """Bot protection refused our own scanner on the home page (D2 baseline)."""
+    return any(
+        BLOCKED_MARKER in e.detail
+        for r in report.results
+        if r.id == "D2.edge_blocking"
+        for e in r.evidence
+    )
+
+
 def _summary(report: ScanReport, lang: Lang) -> str:
     if report.score is None:
         return f"<section class=summary><p class=grade>{esc(UI['no_score'][lang])}</p></section>"
     stages = {s.stage: s for s in report.stages}
     parts = report.parts or part_scores(report.stages)
     panels = "".join(_part(p, stages, report, lang) for p in parts)
-    if report.coverage < MIN_COVERAGE:
+    if report.coverage < MIN_COVERAGE and site_blocked(report):
+        text = UI["blocked_note"][lang]
+    elif report.coverage < MIN_COVERAGE:
         text = UI["low_coverage_note"][lang].format(pct=round(100 * report.coverage))
     elif report.grade is not None:
         text = UI["overall"][lang].format(
@@ -217,7 +232,8 @@ def _fixes(report: ScanReport, lang: Lang) -> str:
             f"<div class=tags>{tags}</div>"
             f"<div>{esc(_guidance(f.check_id, f.guidance, lang))}</div>{also}</li>"
         )
-    intro = UI["top_fixes_intro"][lang].format(n=len(report.top_fixes))
+    n = len(report.top_fixes)
+    intro = UI["top_fix_intro_one" if n == 1 else "top_fixes_intro"][lang].format(n=n)
     return head + f"<p class=muted>{esc(intro)}</p><ol class=fixes>{''.join(items)}</ol>"
 
 

@@ -227,10 +227,10 @@ class _Run:
                 rejected += 1
                 unreadable += not _ok(res)
         source = "sitemap" if from_sitemap else "link crawl"
+        unread = f", {unreadable} of them unreadable, e.g. HTTP 429" if unreadable else ""
         self.note(
             f"Products: {len(self.out.products)} confirmed out of {probes} fetched "
-            f"({rejected} rejected, {unreadable} of them unreadable e.g. HTTP 429); "
-            f"main source: {source}"
+            f"({rejected} rejected{unread}); main source: {source}"
         )
 
     async def policies(self) -> None:

@@ -198,7 +198,7 @@ def test_unmeasured_check_shows_one_evidence_line() -> None:
 def test_low_coverage_report_says_so() -> None:
     rs = [res("D1.robots_ai_crawlers", "pass", 1.0), res("C5.policies_clear", "pass", 1.0)]
     html = render_html(make_report(rs))
-    assert "Nog niet genoeg gemeten" in html and "voorlopig" in html
+    assert "Nog niet genoeg gemeten" in html and "geven we nog geen score" in html
     assert "Klaar" not in text_of(html).replace("Klaar voor AI-shoppingagents", "")
     assert "<b>100</b>" not in html  # no provisional number on a dial (was "100" at 13 %)
 
@@ -332,3 +332,19 @@ def test_internal_probe_lines_are_not_shown() -> None:
     html = render_html(make_report([*sample_results(), res("C1.add_to_cart", "fail", 0.0, ev)]))
     assert "safety_guard" not in html and "checkout_00_challenge.png" not in html
     assert "Bot challenge before the cart" in html
+
+
+def test_blocked_site_gets_a_specific_explanation() -> None:
+    # thuisbezorgd.nl 2026-11-12: home page 403 for every automated client, our own too.
+    blocked = Evidence(
+        detail="Inconclusive: the site blocks all automated clients, including our own scanner."
+    )
+    rs = [
+        res("D1.robots_ai_crawlers", "pass", 1.0),
+        res("D2.edge_blocking", "error", 0.0, [blocked]),
+    ]
+    html = render_html(make_report(rs), lang="en")
+    assert "Your site refused our scanner (bot protection)" in html
+    assert "slowed us down" not in html
+    one_fix = [res("D1.robots_ai_crawlers", "fail", 0.0)]
+    assert "The fix that gains the most" in render_html(make_report(one_fix), lang="en")

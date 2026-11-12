@@ -407,3 +407,26 @@ Correct as measured: C3 "could not verify" (the home page has no payment info at
 Sampling note now says how many rejected pages were unreadable (e.g. 429).
 300 tests green. Fixes verified offline against the saved fixje.nl pages, **not yet live**
 (fixje.nl was scanned once + 3 manual GETs today; next run tomorrow at the earliest).
+
+### 2026-11-12 (evening) — thuisbezorgd.nl and duifhuizen.nl, read-only default scans
+
+**thuisbezorgd.nl** (20:14 UTC, 17 s, 7 requests): bot protection refuses every automated
+client on the home page (HTTP 403), same as 2026-11-09. 13 % measured, no grades (correct).
+Found 2 report faults:
+1. **P3 shown as the only fix (+16.7 points)** from refused endpoints ("ucp 403,
+   ai-catalog.json 403"). Fix: when nothing is found and the UCP profile or AI catalog was
+   refused or not fetched, P3 is `error` (not measured). llms.txt found → still measured.
+2. **Wrong reason in the customer report:** "for example because the shop slowed us down".
+   Fix: when D2 says the site blocks all automated clients, the summary explains that bot
+   protection refused the scanner and advises checking that AI assistants' agents are let
+   through. Also: "score is provisional" → "we give no score yet" (no number is shown), and
+   "The 1 fixes" → "The fix that gains the most …".
+Not useful for accuracy checks: almost nothing can be measured without the shop's consent.
+
+**duifhuizen.nl** (20:16 UTC, 35 s, 23 requests, Shopware 6): 7 product pages from the
+sitemap (1 rejected: HTTP 429), all check results identical to 2026-11-10. Overall 78.9, no
+overall grade; Found by AI agents 88.2 Ready; Orders and payments not measured (no checkout
+test). Manual check (2 GETs): S1 warn correct (Product only as microdata, no JSON-LD), S4 fail
+correct (no shippingDetails / hasMerchantReturnPolicy), C3 pass correct (/betaalopties/ lists
+Visa, Mastercard, iDEAL, Wero; Apple Pay on the home page). **No false results.**
+301 tests green.
