@@ -261,3 +261,72 @@ def test_language_variants_of_one_page_are_sampled_once() -> None:
     assert same_page_key("https://shop.nl/nl/") == "shop.nl/"
     # A non-language first segment is kept.
     assert same_page_key("https://shop.nl/tuin/bank") != same_page_key("https://shop.nl/bank")
+
+
+def test_category_pages_with_a_shop_rating_product_are_not_products() -> None:
+    # fixje.nl /refurbished-iphone/iphone-8-plus/ (2026-11-12): CollectionPage, body class
+    # "archive tax-product_cat", and one "Product" that is the shop itself (url = home).
+    from scanner.parse.html import is_listing_page
+
+    shop_product = {
+        "@type": "Product",
+        "name": "Fixje",
+        "url": "https://www.fixje.nl/",
+        "aggregateRating": {"@type": "AggregateRating", "ratingValue": 4.7, "reviewCount": 132},
+    }
+    page = {"@type": ["WebPage", "CollectionPage"], "url": "https://www.fixje.nl/cat/"}
+    assert is_listing_page(_ld(page)) and not is_single_product_page(_ld(page, shop_product))
+    assert not is_single_product_page(_ld(shop_product))  # shop as Product, even alone
+    woo_cat = '<html><body class="archive tax-product_cat woocommerce">x</body></html>'
+    assert is_listing_page(woo_cat)
+    real = {**shop_product, "name": "iPhone 8 Plus", "url": "https://www.fixje.nl/iphone-8"}
+    assert is_single_product_page(_ld(real))  # a product without offers is still a product
+
+
+def test_product_tile_links_are_found() -> None:
+    from scanner.parse.html import product_tile_urls
+
+    html = (
+        '<nav><a href="/menu-item/">Menu</a></nav>'
+        '<div class="products row"><div class="products__product-card">'
+        '<div class="product-card__title"><a href="/iphone-8-64gb">iPhone</a></div></div>'
+        '<li class="product type-product"><a href="/case#reviews">Case</a></li></div>'
+        '<a href="/sub-category/">Sub</a>'
+    )
+    assert product_tile_urls(html, "https://shop.nl/cat/") == [
+        "https://shop.nl/iphone-8-64gb",
+        "https://shop.nl/case",
+    ]
+
+
+def test_policy_lookalikes_are_not_policies() -> None:
+    from scanner.sampling.urls import policy_kind
+
+    assert policy_kind("https://shop.nl/zakelijk/dropshipping/", "dropshipping") is None
+    assert policy_kind("https://shop.nl/iphone-inruilen/", "iPhone inruilen voor geld") is None
+    assert policy_kind("https://shop.nl/verzending/", "Verzending") == "shipping"
+    assert policy_kind("https://shop.nl/retourneren/", "Retourneren") == "returns"
+
+
+async def test_link_crawl_tries_product_tiles_before_sub_categories() -> None:
+    # fixje.nl 2026-11-12: no sitemap (429); the category page lists 6 sub-categories
+    # before its product tiles, and product URLs are root-level slugs without a pattern.
+    subcats = "".join(f'<a href="/refurbished-iphone/model-{i}/">m{i}</a>' for i in range(6))
+    tiles = "".join(
+        f'<div class="products__product-card"><a href="/iphone-{i}-64gb">p{i}</a></div>'
+        for i in range(3)
+    )
+    category = (
+        f'<html><body class="archive tax-product_cat woocommerce">{subcats}{tiles}</body></html>'
+    )
+    home = '<html><body><a href="/refurbished-iphone/">iPhones</a></body></html>'
+    routes: dict[str, tuple[int, str]] = {f"{ORIGIN}/refurbished-iphone/": (200, category)}
+    for i in range(6):
+        routes[f"{ORIGIN}/refurbished-iphone/model-{i}/"] = (200, category)
+    for i in range(3):
+        routes[f"{ORIGIN}/iphone-{i}-64gb"] = (200, PRODUCT)
+    shop = FakeShop(routes)
+    async with PoliteClient(transport=shop.transport, min_interval_s=0) as c:
+        pages = await sample(c, basics(home), PlatformInfo(platform="woocommerce"), max_products=3)
+    assert paths(pages.products) == ["/iphone-0-64gb", "/iphone-1-64gb", "/iphone-2-64gb"]
+    assert not any("/model-" in p for p in shop.paths())  # no probe wasted on sub-categories

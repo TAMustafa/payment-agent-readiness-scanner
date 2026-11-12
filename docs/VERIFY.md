@@ -379,3 +379,31 @@ the limit and is never extended. Covered by 5 new tests (296 green); not yet run
 Contact URL set 2026-11-12: `SCANNER_CONTACT_URL=https://tarek-ai.com/portfolio/` in `.env`
 (HTTP 200 checked). Earlier live scans ran without `--env-file .env` and sent the
 `contact-url-not-configured.invalid` placeholder; use `uv run --env-file .env scanner scan …`.
+
+### 2026-11-12 (evening) — fixje.nl (WooCommerce), read-only default scan
+
+First live run with the contact URL (`--env-file .env`). 20:01 UTC, 93 s, 22 requests, 4× HTTP
+429 (sitemap rate-limited → link crawl). Result: 1 product page out of 8 fetched; overall
+52.3, no grade; "Found by AI agents" not graded. Checked by hand (3 spaced GETs: the sampled
+product, the chosen shipping page, the home page). **3 false results / sampling faults:**
+1. **Category page sampled as a product.** `/refurbished-iphone/iphone-8-plus/` is a
+   `CollectionPage` with body class `archive tax-product_cat`; its only "Product" is the shop
+   itself (name "Fixje", url = home, 4.7 from 132 reviews, no offers). So S1–S5 all judged a
+   category page (S2 "no offers" fail, S5 pass on the shop rating). Fix: listing pages
+   (WooCommerce/Magento/Shopify/Shopware category body classes, `CollectionPage` /
+   `SearchResultsPage`) are never product pages, and an offer-less Product whose url is the
+   home page is the shop, not a product.
+2. **Probes wasted on menus and sub-categories.** Category pages list navigation, filters and
+   sub-categories before the product tiles; fixje's product URLs are root-level slugs
+   (`/refurbished-iphone-8-plus-64gb-goud`) that no URL pattern recognises, so all 8 probes went
+   to the wrong links. Fix: links inside product tiles (`product-card`, `li.product`,
+   `product-item`, `product-box`, …) are tried first. On the saved category page this finds
+   the 8 product links.
+3. **Wrong policy pages:** "dropshipping" (B2B) was taken as the shipping policy and
+   "iPhone inruilen" (trade-in) as a returns candidate. Fix: these look-alikes are excluded;
+   `/verzending/` is now picked.
+Correct as measured: C3 "could not verify" (the home page has no payment info at all; the
+2026-11-12 C3 change works), P1 fail (404), D3 "could not verify" (429).
+Sampling note now says how many rejected pages were unreadable (e.g. 429).
+300 tests green. Fixes verified offline against the saved fixje.nl pages, **not yet live**
+(fixje.nl was scanned once + 3 manual GETs today; next run tomorrow at the earliest).

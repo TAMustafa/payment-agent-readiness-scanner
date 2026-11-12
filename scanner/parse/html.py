@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
-from selectolax.lexbor import LexborHTMLParser
+from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 
 @dataclass(frozen=True)
@@ -123,12 +123,66 @@ PRODUCT_BODY_CLASSES = frozenset(
 )
 
 
-def is_platform_product_page(html: str) -> bool:
+# Category / listing page markers (2026-11-12, fixje.nl /refurbished-iphone/iphone-8-plus/:
+# a WooCommerce category page with one shop-level "Product" was sampled as a product page).
+# WooCommerce "tax-product_cat" / "post-type-archive-product"; Magento
+# "catalog-category-view"; Shopify themes "template-collection"; Shopware 6 category pages
+# use "is-ctl-navigation" (also the home page, never a product page).
+LISTING_BODY_CLASSES = frozenset(
+    {
+        "tax-product_cat",
+        "tax-product_tag",
+        "post-type-archive-product",
+        "catalog-category-view",
+        "template-collection",
+        "is-ctl-navigation",
+    }
+)
+LISTING_PAGE_TYPES = frozenset({"CollectionPage", "SearchResultsPage"})
+
+
+def _body_classes(html: str) -> set[str]:
     body = parse(html).css_first("body")
-    if body is None:
-        return False
-    classes = set((body.attributes.get("class") or "").split())
-    return bool(classes & PRODUCT_BODY_CLASSES)
+    return set((body.attributes.get("class") or "").split()) if body is not None else set()
+
+
+def is_platform_product_page(html: str) -> bool:
+    return bool(_body_classes(html) & PRODUCT_BODY_CLASSES)
+
+
+def is_listing_page(html: str) -> bool:
+    """The platform or the page's own markup says this is a category / search listing."""
+    if _body_classes(html) & LISTING_BODY_CLASSES:
+        return True
+    return any(types_of(n) & LISTING_PAGE_TYPES for n in jsonld_nodes(html))
+
+
+# Class names of product tiles on listing pages: WooCommerce li.product, Magento
+# product-item, Shopware product-box, Shopify product-card / card-product / grid-product,
+# custom themes like fixje.nl "products__product-card".
+_TILE_CLASS = re.compile(
+    r"(?:^|[-_])(?:product[-_]?(?:card|item|tile|box|block|thumb|miniature)|"
+    r"card[-_]?product|grid[-_]?product)(?:$|[-_])",
+    re.I,
+)
+TILE_DEPTH = 5
+
+
+def product_tile_urls(html: str, base_url: str) -> list[str]:
+    """Absolute URLs of links inside product tiles (in page order, deduplicated)."""
+    out: dict[str, None] = {}
+    for a in parse(html).css("a[href]"):
+        node: LexborNode | None = a
+        depth = 0
+        while node is not None and depth <= TILE_DEPTH:
+            classes = (node.attributes.get("class") or "").split()
+            if "product" in classes or any(_TILE_CLASS.search(c) for c in classes):
+                href = (a.attributes.get("href") or "").strip()
+                if href and not href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                    out.setdefault(urljoin(base_url, href).split("#", 1)[0], None)
+                break
+            node, depth = node.parent, depth + 1
+    return list(out)
 
 
 def has_product_jsonld(html: str) -> bool:
@@ -149,6 +203,8 @@ def is_single_product_page(html: str) -> bool:
     Listing pages (Shopify collections, Shopware category tiles) can carry several Product
     items; those are not product pages. A ProductGroup with its variants counts as one.
     """
+    if is_listing_page(html):
+        return False
     all_nodes = jsonld_nodes(html)
     nodes = [n for n in all_nodes if types_of(n) & {"Product", "ProductGroup"}]
     groups = [n for n in nodes if "ProductGroup" in types_of(n)]
@@ -158,7 +214,11 @@ def is_single_product_page(html: str) -> bool:
         # A category page can describe its product line as one Product without an offer
         # next to an ItemList of product links (fixje.nl /refurbished-iphone/, 2026-11-10).
         # A real product page with a "related products" list still has its own offer.
-        return "offers" in nodes[0] or not _lists_products(all_nodes)
+        node = nodes[0]
+        url = node.get("url")
+        if "offers" not in node and isinstance(url, str) and urlsplit(url).path in ("", "/"):
+            return False  # the shop itself marked up as a Product (rating widget)
+        return "offers" in node or not _lists_products(all_nodes)
     if not nodes:
         return count_product_microdata(html) == 1
     return False

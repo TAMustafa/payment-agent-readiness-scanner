@@ -31,7 +31,14 @@ from scanner.models import (
     SiteBasics,
     SitemapEntry,
 )
-from scanner.parse.html import Link, is_platform_product_page, is_single_product_page, links
+from scanner.parse.html import (
+    Link,
+    is_listing_page,
+    is_platform_product_page,
+    is_single_product_page,
+    links,
+    product_tile_urls,
+)
 from scanner.sampling.urls import (
     SHOPIFY_POLICY_PATHS,
     is_catalogue_link,
@@ -98,7 +105,11 @@ class _Run:
     entries: list[SitemapEntry]
     policy_urls: dict[str, str]
     out: PageSample = field(default_factory=PageSample)
-    tile_links: list[str] = field(default_factory=list)  # product tiles on category pages
+    tile_links: list[str] = field(default_factory=list)  # links on category pages
+    # Links inside product tiles on category pages: tried before other category links,
+    # which start with menus, filters and sub-categories (fixje.nl 2026-11-12: 8 probes
+    # used up on those, the product links came last).
+    product_tiles: list[str] = field(default_factory=list)
     policies_done: bool = False
     reserve_s: float = PROBE_RESERVE_S
 
@@ -143,6 +154,11 @@ class _Run:
                     self.out.products.append(res)
                 continue
             self.out.categories.append(res)
+            self.product_tiles += [
+                u
+                for u in product_tile_urls(res.body or "", res.final_url or url)
+                if is_catalogue_link(u)
+            ]
             self.tile_links += [
                 lk.url
                 for lk in links(res.body or "", res.final_url or url)
@@ -158,6 +174,7 @@ class _Run:
             for u in [lk.url for lk in self.home_links] + self.tile_links
             if is_product_candidate(u, self.plat)
         ]
+        tiles = [u for u in self.product_tiles if not is_product_candidate(u, self.plat)]
         unshaped = [u for u in self.tile_links if not is_product_candidate(u, self.plat)]
         # Generic sitemaps (Shopware, Lightspeed, Magento): plain entries as a last resort,
         # confirmed by markup after fetching.
@@ -172,12 +189,12 @@ class _Run:
         already = {same_page_key(p.url) for p in self.out.categories + self.out.products}
         candidates = [
             u
-            for u in _dedupe(from_sitemap + shaped + unshaped + generic)
+            for u in _dedupe(from_sitemap + shaped + tiles + unshaped + generic)
             if same_page_key(u) not in already
         ]
 
         max_probes = int(self.max_products * MAX_PROBES_FACTOR)
-        probes = rejected = 0
+        probes = rejected = unreadable = 0
         for url in candidates:
             if len(self.out.products) >= self.max_products or probes >= max_probes:
                 break
@@ -194,19 +211,26 @@ class _Run:
                 probes -= 1
                 self.note("Product sampling stopped: scan time budget reached")
                 break
-            ok = _ok(res) and (
-                is_single_product_page(res.body or "")
-                or is_platform_product_page(res.body or "")
-                or looks_like_product_url(url)
+            body = res.body or ""
+            ok = (
+                _ok(res)
+                and not is_listing_page(body)
+                and (
+                    is_single_product_page(body)
+                    or is_platform_product_page(body)
+                    or looks_like_product_url(url)
+                )
             )
             if ok:
                 self.out.products.append(res)
             else:
                 rejected += 1
+                unreadable += not _ok(res)
         source = "sitemap" if from_sitemap else "link crawl"
         self.note(
             f"Products: {len(self.out.products)} confirmed out of {probes} fetched "
-            f"({rejected} rejected); main source: {source}"
+            f"({rejected} rejected, {unreadable} of them unreadable e.g. HTTP 429); "
+            f"main source: {source}"
         )
 
     async def policies(self) -> None:

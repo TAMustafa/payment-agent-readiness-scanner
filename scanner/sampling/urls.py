@@ -32,6 +32,10 @@ POLICY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "privacy": ("privacy",),
     "payment": ("betaalmethode", "betaalmogelijkhed", "betaalwijze", "betalen", "payment"),
 }
+# Words that contain a policy keyword but are something else (fixje.nl 2026-11-12:
+# "dropshipping" for businesses was taken as the shipping policy, "iPhone inruilen"
+# (trade-in) as the returns policy).
+NOT_POLICY = ("dropship", "inruil")
 # Shopify's built-in policy pages (used only when no footer link was found).
 SHOPIFY_POLICY_PATHS: dict[str, str] = {
     "shipping": "/policies/shipping-policy",
@@ -80,6 +84,8 @@ def is_catalogue_link(url: str) -> bool:
 def policy_kind(url: str, text: str) -> str | None:
     haystack_text = text.lower()
     path = urlsplit(url).path.lower()
+    if any(w in haystack_text or w in path for w in NOT_POLICY):
+        return None
     for kind, words in POLICY_KEYWORDS.items():
         if any(w in haystack_text for w in words):
             return kind
