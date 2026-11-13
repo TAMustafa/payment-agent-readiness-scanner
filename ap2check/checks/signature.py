@@ -261,6 +261,11 @@ def _verify_checkout_jwt(
     return result(CID, "warn" if warnings else "pass", ev)
 
 
+# Required members of the AP2 v0.2 Checkout type
+# (code/sdk/schemas/ucp/types/checkout.json in github.com/google-agentic-commerce/AP2).
+CHECKOUT_REQUIRED = ("id", "line_items", "status", "currency", "totals", "links")
+
+
 def _payload_findings(raw: bytes) -> tuple[list[str], list[str]]:
     """(warnings, notes) about the signed checkout payload; values are never echoed."""
     try:
@@ -271,16 +276,16 @@ def _payload_findings(raw: bytes) -> tuple[list[str], list[str]]:
         return ["checkout_jwt payload is not a JSON object"], []
     out: list[str] = []
     notes: list[str] = []
-    merchant = payload.get("merchant")
-    if not isinstance(merchant, dict) or not merchant.get("id") or not merchant.get("name"):
-        out.append("payload has no `merchant` with `id` and `name` (AP2 Merchant type)")
-    missing = [f for f in ("id", "line_items", "currency", "totals") if f not in payload]
+    missing = [f for f in CHECKOUT_REQUIRED if f not in payload]
     if missing:
-        out.append("payload lacks checkout field(s): " + ", ".join(missing))
+        out.append("payload lacks required checkout field(s): " + ", ".join(missing))
+    merchant = payload.get("merchant")  # optional; when present it needs id and name
+    if merchant is not None and not (
+        isinstance(merchant, dict) and merchant.get("id") and merchant.get("name")
+    ):
+        out.append("`merchant` is present but lacks `id` or `name` (AP2 Merchant type)")
     exp = payload.get("exp")
-    if not isinstance(exp, int):
-        out.append("payload has no `exp`: set a short expiry on signed checkouts")
-    elif exp < time.time():
+    if isinstance(exp, int) and exp < time.time():
         notes.append(
             "note: this sample has expired (fine for a test; live checkouts must be fresh)"
         )

@@ -14,22 +14,22 @@
       <p class="eyebrow">Agent Payments Protocol · AP2 v0.2</p>
       <h1>Can AI agents pay at your shop?</h1>
       <p class="lede">
-        Enter your domain. We read your public UCP profile and A2A agent card, check your
-        AP2 declaration and signing keys against the published specs and, if you paste
-        one checkout response, verify your merchant signature.
+        AP2 is the open standard AI shopping agents use to pay a merchant on a buyer's
+        behalf. Enter your shop's domain to see, in five steps, how far your setup is and
+        what to do next.
       </p>
     </header>
 
     <form id="check-form" class="card form" novalidate>
-      <label for="url">Shop domain</label>
+      <label for="url">Your shop's domain</label>
       <div class="row">
         <input id="url" name="url" type="text" inputmode="url" autocomplete="url"
                placeholder="shop.example.com" required maxlength="2048">
-        <button id="submit" type="submit">Check</button>
+        <button id="submit" type="submit">Check my shop</button>
       </div>
 
       <details id="sample-box">
-        <summary>Verify your checkout signature (optional)</summary>
+        <summary>Already signing checkouts for AP2? Verify your signature too</summary>
         <p class="hint">
           Paste one checkout response from your <strong>test</strong> checkout: a UCP
           checkout JSON with <code>ap2.merchant_authorization</code>, or an AP2
@@ -41,9 +41,10 @@
       </details>
 
       <p class="fineprint">
-        Read-only: we send at most three GET requests to your domain (robots.txt,
-        /.well-known/ucp, /.well-known/agent-card.json) and never call your checkout.
+        Safe to run: we only read three public files on your domain (robots.txt,
+        /.well-known/ucp, /.well-known/agent-card.json). We never touch your checkout.
       </p>
+      <p id="progress" class="progress" role="status" hidden></p>
       <p id="form-error" class="error" role="alert" hidden></p>
     </form>
 
@@ -59,21 +60,5 @@
       </p>
     </footer>
   </main>
-
-  <template id="tpl-check">
-    <article class="check">
-      <div class="check-head">
-        <span class="chip"></span>
-        <h3 class="check-label"></h3>
-        <code class="check-id"></code>
-      </div>
-      <ul class="evidence"></ul>
-      <div class="guidance" hidden>
-        <p class="guidance-title">How to fix</p>
-        <p class="guidance-text"></p>
-      </div>
-      <a class="spec" target="_blank" rel="noopener noreferrer">Spec</a>
-    </article>
-  </template>
 </body>
 </html>

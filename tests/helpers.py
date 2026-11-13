@@ -97,8 +97,10 @@ def a2a_checkout_payload(exp: int = 4_102_444_800) -> dict[str, Any]:
         "id": "cart_1",
         "merchant": {"id": "m-1", "name": "Test Shop", "website": SHOP},
         "line_items": [{"id": "li_1", "quantity": 1}],
+        "status": "incomplete",
         "currency": "EUR",
         "totals": [{"type": "total", "amount": 1299}],
+        "links": [{"type": "privacy_policy", "url": f"{SHOP}/privacy"}],
         "iat": 1_700_000_000,
         "exp": exp,
     }

@@ -204,7 +204,5 @@ def parse_jws(token: str) -> Jws:
 
 
 def detached_signing_input(jws: Jws, payload: bytes) -> bytes:
-    """Signing input for detached content; honours RFC 7797 `b64: false`."""
-    if jws.header.get("b64") is False:
-        return jws.header_b64.encode("ascii") + b"." + payload
+    """Signing input for detached content (RFC 7515 Appendix F)."""
     return f"{jws.header_b64}.{b64url_encode(payload)}".encode("ascii")

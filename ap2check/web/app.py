@@ -49,9 +49,14 @@ class RateLimiter:
         self.per_minute = per_minute
         self._clock = clock
         self._hits: dict[str, deque[float]] = defaultdict(deque)
+        self._last_sweep = clock()
 
     def allow(self, key: str) -> bool:
         now = self._clock()
+        if now - self._last_sweep > 60:  # forget idle keys so memory stays bounded
+            self._last_sweep = now
+            for k in [k for k, h in self._hits.items() if not h or now - h[-1] > 60]:
+                del self._hits[k]
         hits = self._hits[key]
         while hits and now - hits[0] > 60:
             hits.popleft()

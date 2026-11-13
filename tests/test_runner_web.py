@@ -67,6 +67,34 @@ async def test_ready_with_valid_sample() -> None:
     assert ua.startswith("AP2ReadinessCheck/")
 
 
+async def test_ladder_and_next_step() -> None:
+    k = MerchantKey()
+    # No profile: rung 1 is the problem and the next step is U1's fix.
+    report = await run(merchant(None))
+    assert [s.state for s in report.steps] == ["problem", "todo", "todo", "todo", "todo"]
+    assert report.steps[0].current and "/.well-known/ucp" in report.next_step
+    # AP2 declared but no keys: rungs 1-3 done, rung 4 is current.
+    report = await run(merchant(profile(keys=[])))
+    assert [s.state for s in report.steps] == ["done", "done", "done", "problem", "todo"]
+    assert report.steps[3].current and "keys" in report.next_step
+    # Everything public is fine: the next step is to paste a sample.
+    report = await run(merchant(profile(k)))
+    assert [s.state for s in report.steps][:4] == ["done"] * 4
+    assert report.steps[4].current and "Paste one checkout response" in report.next_step
+    # Sample verifies: nothing left to do.
+    report = await run(merchant(profile(k)), json.dumps(k.sign_checkout(sample_checkout())))
+    assert all(s.state == "done" and not s.current for s in report.steps)
+    assert "Nothing to fix" in report.next_step
+
+
+async def test_blocked_profile_is_unknown_on_the_ladder() -> None:
+    shop = merchant(None)
+    shop.routes[f"{SHOP}/.well-known/ucp"] = (403, "blocked", {"server": "cloudflare"})
+    report = await run(shop)
+    assert report.steps[0].state == "unknown" and report.steps[0].current
+    assert "/.well-known/ucp" in report.next_step
+
+
 async def test_untested_without_sample_and_failed_with_bad_one() -> None:
     k = MerchantKey()
     assert (await run(merchant(profile(k)))).verdict.level == "untested"
@@ -177,6 +205,19 @@ async def test_api_rejects_private_and_oversized() -> None:
         assert (await c.post("/api/check", json={"url": "localhost"})).status_code == 422
         big = {"url": "shop.example.nl", "sample": "x" * 300_000}
         assert (await c.post("/api/check", json=big)).status_code == 422
+
+
+def test_rate_limiter_forgets_idle_keys() -> None:
+    from ap2check.web.app import RateLimiter
+
+    now = [0.0]
+    limiter = RateLimiter(2, clock=lambda: now[0])
+    for i in range(500):
+        assert limiter.allow(f"visitor-{i}")
+    now[0] = 200.0
+    assert limiter.allow("fresh")
+    assert set(limiter._hits) == {"fresh"}
+    assert limiter.allow("fresh") and not limiter.allow("fresh")
 
 
 async def test_api_rate_limits_per_target() -> None:

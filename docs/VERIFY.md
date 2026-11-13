@@ -34,6 +34,31 @@ The scanner-era log (reference shops, probe runs, V1 costs) is in git history at
   `test_s3_static_site_without_profile_is_not_discoverable`. 99 tests green.
 - Result after fix: "AI agents cannot find your AP2 setup" (correct: no profile, no card).
 
+## 2026-11-13 — review and cleanup
+- Sources re-checked: AP2 `main` unchanged (v0.2.0 latest tag); `ucp.dev/latest` is still
+  2026-08-25; UCP schema `payment_ap2_mandate.json` matches M1 (detached JWS pattern,
+  ES256/384/512, `kid`, error codes).
+- M1 `checkout_jwt` payload warnings now follow the AP2 Checkout schema
+  (`code/sdk/schemas/ucp/types/checkout.json`): required `id`, `line_items`, `status`,
+  `currency`, `totals`, `links`. `merchant` and `exp` are optional there, so their absence no
+  longer warns (was a possible false warning); a `merchant` without `id`/`name` still warns.
+- Rate limiter forgets idle keys (memory was unbounded on a public site).
+- Removed unused code: `profile_usable`, `AP2_CHECKOUT`, `FetchedResource.ok` /
+  `unavailable_reason`, `Rule.text`, the fetcher's `respect_robots` switch, the `make_shop`
+  fixture, RFC 7797 `b64:false` handling (UCP does not use it). Request budget 6 → 3.
+  Stale `.gitignore` entries removed. 100 tests green.
+
+## 2026-11-13 — live check goudenhuisalmere.nl (Tarek's request) and report redesign
+- Result: "AI agents cannot find your AP2 setup". Correct: WooCommerce 11.2 shop;
+  `/.well-known/ucp` and `/.well-known/agent-card.json` are real 404s (HTML), robots 200.
+- Problem was the output, not the result: one failing card followed by nine "N/A" cards, no
+  indication of how far the shop is or what to do first.
+- Changes: `Report.steps` (five-rung ladder) and `Report.next_step` (`runner.ladder`); page
+  shows verdict + ladder, one "Your next step" box, copy-for-developer and download buttons;
+  checks are folded unless they need attention; plain status labels (OK / Improve / Problem /
+  Not checked / Couldn't check); guidance shows the shop's own address; loading message;
+  shareable `?url=` link; CLI prints the ladder too. 102 tests green; checked in the browser.
+
 ## Known limits
 - No live merchant with a UCP AP2 profile verified yet (next step; ask Tarek per site).
 - UCP signs the full checkout JSON; if a merchant's JCS differs from ours on exotic numbers

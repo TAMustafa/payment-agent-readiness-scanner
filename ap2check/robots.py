@@ -22,9 +22,6 @@ class Rule:
     pattern: str
     line_no: int
 
-    def text(self) -> str:
-        return f"{'Allow' if self.allow else 'Disallow'}: {self.pattern}"
-
     def matches(self, path: str) -> bool:
         return _compile(self.pattern).match(path) is not None
 

@@ -90,4 +90,4 @@ UCP 2026-08-25, https://ucp.dev/2026-08-25/specification/payment/extensions/ap2-
 - [primary] https://ucp.dev/2026-08-25/specification/overview/,
   .../payment/extensions/ap2-mandates/, .../signatures/, https://ucp.dev/documentation/ucp-and-ap2/
 - [primary] https://a2a-protocol.org/latest/specification/
-- [primary] RFC 7515 (JWS), RFC 7517 (JWK), RFC 7518 (JWA), RFC 7797 (b64), RFC 8785 (JCS)
+- [primary] RFC 7515 (JWS), RFC 7517 (JWK), RFC 7518 (JWA), RFC 8785 (JCS)

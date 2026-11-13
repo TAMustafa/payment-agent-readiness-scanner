@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 import httpx
-import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -42,8 +40,3 @@ class FakeShop:
 
     def paths(self) -> list[str]:
         return [r.url.path for r in self.requests]
-
-
-@pytest.fixture
-def make_shop() -> Callable[..., FakeShop]:
-    return FakeShop

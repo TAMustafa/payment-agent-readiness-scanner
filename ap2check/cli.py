@@ -43,6 +43,12 @@ def check(
         return
     typer.echo(f"{report.target}  —  {report.verdict.title}")
     typer.echo(report.verdict.summary + "\n")
+    marks = {"done": "x", "problem": "!", "unknown": "?", "todo": " "}
+    for n, s in enumerate(report.steps, start=1):
+        typer.echo(
+            f"  [{marks[s.state]}] {n}. {s.title}{'   <- you are here' if s.current else ''}"
+        )
+    typer.echo(f"\nNext step: {report.next_step}\n")
     for r in report.results:
         typer.echo(f"[{ICON[r.status]}] {r.id:<24} {r.label}")
         for e in r.evidence:

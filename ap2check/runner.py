@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -20,6 +20,7 @@ from ap2check.models import (
     Evidence,
     FetchedResource,
     Report,
+    Step,
     Verdict,
 )
 
@@ -164,6 +165,54 @@ def verdict(results: list[CheckResult]) -> Verdict:
     )
 
 
+LADDER: list[tuple[str, tuple[str, ...]]] = [
+    ("Agents can find your shop", ("U1", "U2", "U3")),
+    ("Agents can start a checkout", ("U4", "U5")),
+    ("AP2 is switched on", ("A1",)),
+    ("Your signing key is published", ("A2",)),
+    ("Your checkout signature verifies", ("M1",)),
+]
+
+
+def ladder(results: list[CheckResult]) -> tuple[list[Step], str]:
+    """The readiness ladder and the single next action (guidance of the first open rung)."""
+    by = {r.id.split(".")[0]: r for r in results}
+    steps: list[Step] = []
+    next_step = ""
+    for title, ids in LADDER:
+        rung = [by[i] for i in ids]
+        statuses = {r.status for r in rung}
+        state: Literal["done", "problem", "unknown", "todo"]
+        if "fail" in statuses:
+            state = "problem"
+        elif "error" in statuses:
+            state = "unknown"
+        elif "not_applicable" in statuses:
+            state = "todo"
+        else:
+            state = "done"
+        current = state != "done" and not next_step
+        if current:
+            blocker = next((r for r in rung if r.status in ("fail", "error")), None)
+            if blocker is not None and blocker.guidance:
+                next_step = blocker.guidance
+            elif ids == ("M1",):
+                next_step = (
+                    "Paste one checkout response from your test checkout to verify that your "
+                    "signature matches your published key."
+                )
+            else:
+                next_step = "Fix the step before this one first, then run the check again."
+        steps.append(Step(title=title, state=state, current=current, checks=[r.id for r in rung]))
+    if not next_step:
+        next_step = (
+            "Nothing to fix in your public setup. Make sure your checkout verifies the "
+            "mandates agents send and returns signed receipts; that cannot be tested from "
+            "outside."
+        )
+    return steps, next_step
+
+
 async def check_merchant(
     url: str,
     sample: str | None = None,
@@ -179,12 +228,15 @@ async def check_merchant(
         inp = await collect(target, sample, fetcher)
         log = list(fetcher.log)
     results = run_checks(inp)
+    steps, next_step = ladder(results)
     return Report(
         target=target,
         checked_at=datetime.now(UTC).isoformat(timespec="seconds"),
         tool_version=__version__,
         spec_versions=SPEC_VERSIONS,
         verdict=verdict(results),
+        steps=steps,
+        next_step=next_step,
         results=results,
         requests=log,
         notes=NOTES,

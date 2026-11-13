@@ -7,7 +7,7 @@ Technical summary, not legal advice.
 |---|---|---|
 | Only GET requests; no write to any merchant | `ap2check/fetch.py` is the only network code and uses one `stream("GET", …)` | `test_safety.py::test_fetcher_sends_get_only_and_never_follows_redirects`, `test_only_fetch_module_does_network_io`; `test_runner_web.py::test_ready_with_valid_sample` asserts every request is GET |
 | Never calls a checkout, never sends mandates or payment data | no such code; checks read collected data only | AST scans above |
-| At most 3 requests per check, ≥ 1 s apart, polite identity, robots.txt respected | `Fetcher` (budget 6, per-host interval, `AP2ReadinessCheck` UA) | `test_ready_with_valid_sample` (exact paths, UA), `test_robots_disallow_is_respected` |
+| At most 3 requests per check, ≥ 1 s apart, polite identity, robots.txt respected | `Fetcher` (budget 3, per-host interval, `AP2ReadinessCheck` UA) | `test_ready_with_valid_sample` (exact paths, UA), `test_robots_disallow_is_respected` |
 | Redirects never followed (also UCP's rule) | `follow_redirects=False` | `test_redirect_is_not_followed` |
 | Cannot be used to read internal services (SSRF) | `private_host` on the submitted name, DNS resolution checked before any request, https only, no redirects | `test_normalise_refuses`, `test_dns_to_private_address_is_refused`. Limit: DNS rebinding between our lookup and the connection is not prevented |
 | Cannot be used to hammer a shop | 4 checks/min per target host, 6/min per visitor, 4 concurrent | `test_api_rate_limits_per_target` |

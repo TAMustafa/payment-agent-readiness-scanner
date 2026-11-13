@@ -44,10 +44,10 @@ Status conventions: `pass` / `warn` / `fail`; blocked, rate-limited or unverifia
 | A2.signing_keys | ap2 | top-level `keys[]` has a valid public EC P-256 key with `kid` (point on curve, `use` sig, `alg` matches) | only P-384/P-521 keys (agents must only support ES256) | no keys, keys inside `ucp`, private material (`d`) published, duplicate/missing kid, invalid point, only OKP keys |
 | G1.agent_card | a2a | A2A 1.0 card with required fields, https interfaces | A2A 0.3-style card (as in the AP2 samples) | not JSON, required field missing, http interface. 404 → n/a |
 | G2.ap2_extension | a2a | `capabilities.extensions` has `https://github.com/google-agentic-commerce/ap2/v1` with `required: true` | not required, or AP2-like other URI | card without AP2 extension. No card → n/a |
-| M1.merchant_signature | signature | sample signature verifies with the published key of its `kid` | A2A payload lacks merchant/checkout fields or `exp` | not detached / not compact, alg not ES*, EdDSA, unknown kid, bad signature, `checkout_hash` mismatch, missing `merchant_authorization`. No published keys → error. No sample → n/a |
+| M1.merchant_signature | signature | sample signature verifies with the published key of its `kid` | A2A payload lacks a field the AP2 Checkout schema requires (`id`, `line_items`, `status`, `currency`, `totals`, `links`), or `merchant` lacks `id`/`name` | not detached / not compact, alg not ES*, EdDSA, unknown kid, bad signature, `checkout_hash` mismatch, missing `merchant_authorization`. No published keys → error. No sample → n/a |
 
 M1 details: UCP form verifies the detached JWS over JCS (RFC 8785) of the checkout without
-`ap2` (honours RFC 7797 `b64:false`); A2A form verifies the compact JWS and recomputes
+`ap2`; A2A form verifies the compact JWS and recomputes
 `checkout_hash` = base64url(sha-256(checkout_jwt)). An expired sample is a note, not a warn.
 
 ## 5. Verdict (no numeric score)
@@ -59,6 +59,13 @@ Evaluated in order:
    an agent card (AP2 defines no key publication outside a UCP profile).
 5. **ready**: M1 pass/warn. **signature_failed**: M1 fail/error. Otherwise **untested**.
 
+**Readiness ladder** (shown first, with the verdict): five rungs, each `done` (all its checks
+pass/warn), `problem` (a fail), `unknown` (an error) or `todo` (not reached):
+1 Agents can find your shop (U1–U3) · 2 Agents can start a checkout (U4–U5) · 3 AP2 is
+switched on (A1) · 4 Your signing key is published (A2) · 5 Your checkout signature verifies
+(M1). The first rung that is not done is "current"; `next_step` is the guidance of its first
+failing check (or "paste a sample" for rung 5). G1/G2 are optional and outside the ladder.
+
 Standing notes on every report: AP2 maturity; mandate verification by the merchant is not
 testable read-only; sample privacy.
 
@@ -68,6 +75,10 @@ testable read-only; sample privacy.
 - Limits: 6 checks/min per visitor IP, 4/min per checked host, 4 concurrent checks; 429/503
   with a readable message. No persistence; `Cache-Control: no-store` on the API.
 - All report text is rendered with `textContent` (third-party JSON is untrusted).
+- Result layout: verdict + ladder ("n of 5 steps done") → "Your next step" with "Copy summary
+  for your developer" and "Download full report (JSON)" → all checks, problems unfolded and
+  passed / not-checked ones folded → caveats folded. When rung 5 is current, a button opens
+  the sample box. After a check the address bar holds `?url=<host>` (never the sample).
 - `GET /healthz`. No OpenAPI/docs endpoints in production.
 
 ## 7. Out of scope / later

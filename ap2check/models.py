@@ -27,13 +27,6 @@ class FetchedResource(BaseModel):
     truncated: bool = False  # body was longer than the read cap
     error: str | None = None
 
-    @property
-    def ok(self) -> bool:
-        return self.status_code is not None and 200 <= self.status_code < 300 and bool(self.body)
-
-    def unavailable_reason(self) -> str:
-        return self.error or f"HTTP {self.status_code}"
-
 
 class Evidence(BaseModel):
     url: str | None = None
@@ -63,12 +56,23 @@ class RequestLog(BaseModel):
     error: str | None = None
 
 
+class Step(BaseModel):
+    """One rung of the readiness ladder shown at the top of a report."""
+
+    title: str
+    state: Literal["done", "problem", "unknown", "todo"]
+    current: bool = False  # the first rung that is not done: where the merchant stands
+    checks: list[str]  # ids of the checks behind this rung
+
+
 class Report(BaseModel):
     target: str  # https origin that was checked
     checked_at: str  # ISO 8601, UTC
     tool_version: str
     spec_versions: dict[str, str]
     verdict: Verdict
+    steps: list[Step]
+    next_step: str  # the one thing to do next, in plain language
     results: list[CheckResult]
     requests: list[RequestLog]  # every request we sent, for transparency
     notes: list[str]  # standing caveats (protocol maturity, what cannot be tested)

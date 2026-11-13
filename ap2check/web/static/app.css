@@ -85,30 +85,59 @@ summary { cursor: pointer; font-weight: 600; }
 .fineprint { margin: 16px 0 0; }
 .error { color: var(--fail); margin: 12px 0 0; }
 
+.progress { color: var(--muted); margin: 12px 0 0; font-size: 14px; }
+
 #result { margin-top: 28px; }
+#result h2 { margin: 0 0 6px; font-size: 20px; }
 .verdict { border-left: 6px solid var(--na); }
 .verdict.ready { border-left-color: var(--pass); }
 .verdict.untested, .verdict.incomplete, .verdict.no_ap2 { border-left-color: var(--warn); }
 .verdict.not_discoverable, .verdict.signature_failed { border-left-color: var(--fail); }
-.verdict h2 { margin: 0 0 6px; font-size: 22px; }
+.verdict h2 { font-size: 24px; line-height: 1.25; }
 .verdict p { margin: 0; }
-.meta { color: var(--muted); font-size: 13px; margin-top: 10px !important; }
+.target { color: var(--muted); font-size: 14px; margin-bottom: 4px !important; }
+.steps-title { margin: 18px 0 8px !important; font-weight: 600; font-size: 14px; }
 
-.stage { margin-top: 28px; }
-.stage h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
-  margin: 0 0 10px; }
-.check { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 16px 18px; margin-bottom: 10px; }
-.check-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.check-label { margin: 0; font-size: 16px; flex: 1 1 240px; }
-.check-id { color: var(--muted); font-size: 12px; }
-.chip { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px;
-  background: var(--na-bg); color: var(--na); text-transform: uppercase; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.step { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px;
+  color: var(--muted); }
+.step-mark { flex: 0 0 26px; height: 26px; border-radius: 50%; display: grid;
+  place-items: center; font-size: 13px; font-weight: 700; background: var(--na-bg);
+  color: var(--na); }
+.step-state { font-size: 13px; }
+.step.done { color: var(--text); }
+.step.done .step-mark { background: var(--pass-bg); color: var(--pass); }
+.step.problem { color: var(--text); }
+.step.problem .step-mark { background: var(--fail-bg); color: var(--fail); }
+.step.unknown .step-mark { background: var(--warn-bg); color: var(--warn); }
+.step.current { background: var(--bg); color: var(--text); font-weight: 600; }
+.step.current .step-state { font-weight: 400; }
+
+.next { margin-top: 12px; }
+.next p { margin: 0; }
+.actions { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+.actions button { padding: 8px 14px; font-size: 14px; }
+
+.details-head { margin-top: 32px; display: flex; align-items: baseline; gap: 12px;
+  flex-wrap: wrap; }
+.tally { margin: 0; color: var(--muted); font-size: 14px; }
+.stage { margin-top: 18px; }
+.stage h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin: 0 0 8px; }
+.check { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  margin-bottom: 8px; }
+.check-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  cursor: pointer; font-weight: 600; font-size: 15px; }
+.check.not_applicable .check-head, .check.pass .check-head { font-weight: 400; }
+.check.not_applicable .check-label { color: var(--muted); }
+.check-body { padding: 0 14px 14px; }
+.chip { flex: 0 0 auto; font-size: 11px; font-weight: 700; padding: 2px 9px;
+  border-radius: 999px; background: var(--na-bg); color: var(--na); text-transform: uppercase;
+  white-space: nowrap; }
 .chip.pass { background: var(--pass-bg); color: var(--pass); }
-.chip.warn { background: var(--warn-bg); color: var(--warn); }
+.chip.warn, .chip.error { background: var(--warn-bg); color: var(--warn); }
 .chip.fail { background: var(--fail-bg); color: var(--fail); }
-.chip.error { background: var(--warn-bg); color: var(--warn); }
-.evidence { margin: 10px 0 0; padding-left: 18px; font-size: 14px; }
+.evidence { margin: 0; padding-left: 18px; font-size: 14px; }
 .evidence li { margin: 3px 0; overflow-wrap: anywhere; }
 .evidence pre { margin: 4px 0 0; padding: 8px; background: var(--code-bg); border-radius: 6px;
   white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
@@ -116,10 +145,11 @@ summary { cursor: pointer; font-weight: 600; }
   font-size: 14px; }
 .guidance-title { margin: 0 0 4px; font-weight: 600; }
 .guidance-text { margin: 0; }
-.spec { display: inline-block; margin-top: 10px; font-size: 13px; }
+.check-meta { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 
-.notes { color: var(--muted); font-size: 14px; padding-left: 18px; }
-.actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+.notes-box { margin-top: 24px; }
+.notes { color: var(--muted); font-size: 14px; padding-left: 18px; margin-bottom: 0; }
+.notes li { overflow-wrap: anywhere; }
 .foot { margin-top: 48px; color: var(--muted); font-size: 13px; }
 
 @media (max-width: 560px) {

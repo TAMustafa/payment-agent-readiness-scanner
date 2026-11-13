@@ -33,16 +33,16 @@ def _no_profile(check_id: str, inp: CheckInput) -> CheckResult:
     return result(
         check_id,
         "not_applicable",
-        [Evidence(url=_url(inp), detail="no usable UCP profile (see U1)")],
+        [
+            Evidence(
+                url=_url(inp), detail="not checked: there is no UCP profile to read yet (see U1)"
+            )
+        ],
     )
 
 
 def _url(inp: CheckInput) -> str:
     return f"{inp.target}/.well-known/ucp"
-
-
-def profile_usable(inp: CheckInput) -> bool:
-    return ucp_obj(inp.profile_json) is not None
 
 
 def u1_profile_reachable(inp: CheckInput) -> CheckResult:

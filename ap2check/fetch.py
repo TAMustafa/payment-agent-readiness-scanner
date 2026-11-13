@@ -34,7 +34,7 @@ from ap2check.robots import RobotsTxt, robots_from_resource
 ROBOTS_TOKEN = "AP2ReadinessCheck"
 DEFAULT_CONTACT_URL = "https://contact-url-not-configured.invalid"
 MAX_BODY_BYTES = 1_000_000  # UCP consumers must accept >= 128 KiB; we read more to report size
-MAX_REQUESTS = 6  # robots.txt + ucp + agent card, with room for retries of none
+MAX_REQUESTS = 3  # robots.txt, /.well-known/ucp, /.well-known/agent-card.json
 TIMEOUT_S = 10.0
 _LOCAL_SUFFIXES = (".localhost", ".local", ".internal", ".lan", ".home.arpa", ".test")
 
@@ -123,7 +123,7 @@ class Fetcher:
                 )
         return self._resolved_ok[host]
 
-    async def get(self, url: str, *, respect_robots: bool = True) -> FetchedResource:
+    async def get(self, url: str) -> FetchedResource:
         """GET `url`. Never raises for network/HTTP problems; they land in `.error`."""
         parts = urlsplit(url)
         host = (parts.hostname or "").lower()
@@ -132,12 +132,11 @@ class Fetcher:
         refusal = await self._refusal(host)
         if refusal:
             return self._logged(FetchedResource(url=url, error=refusal))
-        if respect_robots:
-            robots = await self._robots_for(f"https://{parts.netloc}")
-            if robots is not None and not robots.is_allowed(ROBOTS_TOKEN, url):
-                return self._logged(
-                    FetchedResource(url=url, error=f"disallowed by robots.txt for {ROBOTS_TOKEN}")
-                )
+        robots = await self._robots_for(f"https://{parts.netloc}")
+        if robots is not None and not robots.is_allowed(ROBOTS_TOKEN, url):
+            return self._logged(
+                FetchedResource(url=url, error=f"disallowed by robots.txt for {ROBOTS_TOKEN}")
+            )
         return await self._send(url, host)
 
     async def _robots_for(self, origin: str) -> RobotsTxt | None:

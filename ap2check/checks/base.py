@@ -17,7 +17,6 @@ UCP_AP2 = f"https://ucp.dev/{UCP_VERSION}/specification/payment/extensions/ap2-m
 UCP_SIGNATURES = f"https://ucp.dev/{UCP_VERSION}/specification/signatures/"
 A2A_SPEC = "https://a2a-protocol.org/latest/specification/"
 AP2_SPEC = "https://ap2-protocol.org/ap2/specification/"
-AP2_CHECKOUT = "https://ap2-protocol.org/ap2/checkout_mandate/"
 
 AP2_CAPABILITY = "dev.ucp.common.payment.ap2_mandate"
 CHECKOUT_CAPABILITY = "dev.ucp.shopping.checkout"

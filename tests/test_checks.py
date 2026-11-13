@@ -361,17 +361,28 @@ def test_a2a_eddsa_fails() -> None:
     assert r.status == "fail" and "deterministic" in details(r)
 
 
-def test_a2a_expired_sample_is_only_a_note_and_missing_merchant_warns() -> None:
+def test_a2a_payload_follows_ap2_checkout_schema() -> None:
     k = MerchantKey()
+
+    def status_of(payload: dict[str, Any]) -> str:
+        return signature.m1_merchant_signature(
+            inp(make_profile(k), sample=k.checkout_jwt(payload))
+        ).status
+
     expired = k.checkout_jwt(a2a_checkout_payload(exp=1_700_000_100))
     r = signature.m1_merchant_signature(inp(make_profile(k), sample=expired))
     assert r.status == "pass" and "expired" in details(r)
-    payload = a2a_checkout_payload()
-    del payload["merchant"]
-    assert (
-        signature.m1_merchant_signature(inp(make_profile(k), sample=k.checkout_jwt(payload))).status
-        == "warn"
-    )
+    # `merchant` and `exp` are optional in the AP2 Checkout schema: no warning without them.
+    optional = a2a_checkout_payload()
+    del optional["merchant"], optional["exp"]
+    assert status_of(optional) == "pass"
+    for field in ("status", "links", "line_items"):  # required by the schema
+        payload = a2a_checkout_payload()
+        del payload[field]
+        assert status_of(payload) == "warn", field
+    bad_merchant = a2a_checkout_payload()
+    bad_merchant["merchant"] = {"name": "no id"}
+    assert status_of(bad_merchant) == "warn"
 
 
 def test_evidence_never_echoes_sample_values() -> None:
