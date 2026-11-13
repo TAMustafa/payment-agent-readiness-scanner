@@ -9,7 +9,9 @@ from typing import Annotated
 
 import typer
 
+from ap2check.demo import SCENARIOS, run_demo
 from ap2check.fetch import DEFAULT_CONTACT_URL
+from ap2check.models import Report
 from ap2check.runner import InvalidTarget, check_merchant
 
 app = typer.Typer(add_completion=False, help="Check a merchant's readiness for AP2 payments.")
@@ -41,6 +43,22 @@ def check(
     if as_json:
         typer.echo(report.model_dump_json(indent=2))
         return
+    _print(report)
+
+
+@app.command()
+def demo(
+    scenario: Annotated[str, typer.Argument(help="One of: " + ", ".join(SCENARIOS))] = "ready",
+) -> None:
+    """Show the report for the built-in demo shop (no network)."""
+    if scenario not in SCENARIOS:
+        raise typer.BadParameter("choose one of: " + ", ".join(SCENARIOS))
+    report, _ = asyncio.run(run_demo(scenario))
+    typer.echo(f"Demo: {SCENARIOS[scenario].title}. {SCENARIOS[scenario].description}\n")
+    _print(report)
+
+
+def _print(report: Report) -> None:
     typer.echo(f"{report.target}  —  {report.verdict.title}")
     typer.echo(report.verdict.summary + "\n")
     marks = {"done": "x", "problem": "!", "unknown": "?", "todo": " "}

@@ -239,5 +239,5 @@ async def check_merchant(
         next_step=next_step,
         results=results,
         requests=log,
-        notes=NOTES,
+        notes=list(NOTES),
     )

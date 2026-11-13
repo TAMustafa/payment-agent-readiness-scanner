@@ -18,9 +18,11 @@ changing any check. AP2 v0.2 is pre-release (FIDO standardisation); never claim 
 agents will send orders, or that agent checkout is live in a given market.
 
 ## Current status (2026-11-13) — start here
-- Built: checks U1–U5, A1–A2, G1–G2, M1, verdict, CLI, FastAPI website. 102 tests green;
+- Built: checks U1–U5, A1–A2, G1–G2, M1, verdict, CLI, FastAPI website. 107 tests green;
   ruff + mypy --strict clean. Log: `docs/VERIFY.md`.
-- **Next:** live verification against real UCP profiles (ask Tarek per site) and a sample
+- Live round 2026-11-13 (10 shops, `docs/VERIFY.md`): Shopify shops pass steps 1–2, none
+  declares AP2 yet; no shop with a passing AP2 setup found.
+- **Next:** find or build a merchant with AP2 declared (ask Tarek per site) and a sample
   merchant from the AP2 v0.2 Python sample; then deployment (host, domain, contact URL).
 - **Repo:** github.com/TAMustafa/payment-agent-readiness-scanner, branch `main`. Tarek commits
   to `main` in this existing repo; commit/push only when he asks.
@@ -43,9 +45,10 @@ why, keep it minimal, pin a version at least two weeks old.
    in `ap2check/fetch.py` (the only network code) and proven by `tests/test_safety.py`;
    keep those tests passing. Details: `docs/SAFETY.md`.
 2. **Verify only, never sign.** The package holds no private keys and has no signing code
-   (signing helpers live only in `tests/helpers.py`).
+   (signing lives only in `tests/helpers.py` and `scripts/make_demo_fixture.py`; the demo
+   shop ships public data only).
 3. **Polite + safe fetching.** Identify as `AP2ReadinessCheck/<version> (+AP2CHECK_CONTACT_URL)`;
-   respect robots.txt; ≥ 1 s between requests per host; HTTPS only; never follow redirects;
+   respect robots.txt; ≥ 1 s between requests per host; HTTPS only; never follow redirects (only robots.txt redirects, max 2 hops, RFC 9309);
    refuse private/local addresses (by name and after DNS). Website limits: 6 checks/min per
    visitor, 4/min per target host, 4 concurrent.
 4. **Privacy/GDPR.** Pasted samples are processed in memory, never stored or logged, and
@@ -70,9 +73,13 @@ ap2check/
   checks/         # base.py (SPECS: id/stage/label/spec URL/guidance), profile.py (U1–U5,
                   # A1–A2), agent_card.py (G1–G2), signature.py (M1); __init__ ALL_CHECKS
   runner.py       # normalise_target -> collect (fetch) -> run_checks -> verdict -> Report
-  cli.py          # typer: check <url> [--sample f] [--json]; serve [--host --port]
+  demo.py         # built-in demo shop: SCENARIOS + run_demo(); serves demo_data/*.json
+                  # (public profile + pre-signed checkout) via httpx.MockTransport
+  cli.py          # typer: check <url> [--sample f] [--json]; demo [scenario]; serve
   web/app.py      # create_app(): GET /, POST /api/check, GET /healthz, rate limits, CSP
   web/static/     # index.html, app.css, app.js
+scripts/          # make_demo_fixture.py (OUTSIDE the package: signs the demo checkout with a
+                  # throw-away key and discards it; rerun if the checkout or profile changes)
 tests/            # helpers.py (keys, signing, fake merchants), test_checks.py,
                   # test_runner_web.py, test_jose.py, test_robots.py, test_safety.py
 ```
@@ -107,4 +114,5 @@ class CheckResult(BaseModel):
 - `uv sync`
 - `uv run --env-file .env ap2check serve` (website, http://127.0.0.1:8000)
 - `uv run --env-file .env ap2check check shop.example.com [--sample file] [--json]`
-- `uv run ruff check . && uv run mypy ap2check && uv run pytest` (≈1 s, 102 tests)
+- `uv run ap2check demo [ready|no_ap2|signature_failed]` (built-in demo shop, no network)
+- `uv run ruff check . && uv run mypy ap2check && uv run pytest` (≈1 s, 107 tests)

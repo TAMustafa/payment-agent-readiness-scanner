@@ -1,0 +1,48 @@
+{
+  "ucp": {
+    "version": "2026-08-25"
+  },
+  "id": "chk_demo_0001",
+  "status": "ready_for_complete",
+  "currency": "EUR",
+  "line_items": [
+    {
+      "id": "li_1",
+      "item": {
+        "id": "mug-blue",
+        "title": "Demo mug, blue",
+        "price": 1295
+      },
+      "quantity": 2,
+      "totals": [
+        {
+          "type": "subtotal",
+          "amount": 2590
+        }
+      ]
+    }
+  ],
+  "totals": [
+    {
+      "type": "subtotal",
+      "amount": 2590
+    },
+    {
+      "type": "fulfillment",
+      "amount": 495
+    },
+    {
+      "type": "total",
+      "amount": 3085
+    }
+  ],
+  "links": [
+    {
+      "type": "privacy_policy",
+      "url": "https://demo-shop.example/privacy"
+    }
+  ],
+  "ap2": {
+    "merchant_authorization": "eyJhbGciOiAiRVMyNTYiLCAia2lkIjogImRlbW8tMjAyNi0xMSJ9..NvISaByJle8XkEjkz_klBx-h6cdQ_Hf_1eN37RnwGeHN6Bh5aYZFiWPkMp9Too_rg-eXy5IWq_qGwGeq_-DSqQ"
+  }
+}

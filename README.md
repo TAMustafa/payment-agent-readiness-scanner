@@ -31,6 +31,7 @@ cp .env.example .env      # set AP2CHECK_CONTACT_URL (shown in our User-Agent)
 uv run --env-file .env ap2check serve                      # website on http://127.0.0.1:8000
 uv run --env-file .env ap2check check shop.example.com     # terminal summary
 uv run --env-file .env ap2check check shop.example.com --sample checkout.json --json
+uv run ap2check demo ready             # built-in demo shop: ready | no_ap2 | signature_failed
 uv run ruff check . && uv run mypy ap2check && uv run pytest
 ```
 
@@ -43,9 +44,11 @@ ap2check/
   checks/         # base.py (spec URLs, guidance), profile.py (U*, A*), agent_card.py (G*),
                   # signature.py (M1)
   runner.py       # normalise URL -> fetch -> checks -> verdict -> Report
-  cli.py          # typer: check, serve
+  demo.py         # built-in demo shop (static documents in demo_data/, no network)
+  cli.py          # typer: check, demo, serve
   web/app.py      # FastAPI: GET /, POST /api/check, /healthz; rate limits, CSP
   web/static/     # index.html, app.css, app.js (no build step)
 tests/            # fixtures built in tests/helpers.py; test_safety.py proves the guarantees
+scripts/          # make_demo_fixture.py: regenerates demo_data/ (signs, then discards the key)
 docs/             # AP2.md (research), SAFETY.md, VERIFY.md (log)
 ```

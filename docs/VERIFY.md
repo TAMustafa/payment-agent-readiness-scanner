@@ -59,8 +59,39 @@ The scanner-era log (reference shops, probe runs, V1 costs) is in git history at
   Not checked / Couldn't check); guidance shows the shop's own address; loading message;
   shareable `?url=` link; CLI prints the ladder too. 102 tests green; checked in the browser.
 
+## 2026-11-13 — live round: looking for a shop that passes (Tarek's request)
+One check each (3 GETs), 2 s apart, via the CLI.
+
+| Shop | Verdict | Notes |
+|---|---|---|
+| www.allbirds.com, www.glossier.com, skims.com, monos.com (Shopify) | no_ap2 | U1–U5 pass: UCP 2026-08-25 profile, MCP endpoint on `*.myshopify.com/api/ucp/mcp`, handlers `com.google.pay`, `dev.shopify.card`, `dev.shopify.shop_pay`, `Cache-Control: public, max-age=60`. No `dev.ucp.common.payment.ap2_mandate`, no top-level `keys` |
+| www.gymshark.com | not_discoverable | 404 |
+| www.etsy.com, www.wayfair.com, www.target.com, www.walmart.com | not_discoverable | 404 on both files, although all four are UCP co-developers |
+| www.stoov.com | unknown (wrong) | robots.txt 301 → apex was read as "disallow all" |
+
+- **No shop with AP2 declared was found.** Shopify's default profile stops after step 2, so
+  steps 3–5 are still only proven on fixtures.
+- Checks U1–U5 confirmed on real profiles (manual read of allbirds' profile matches the
+  report line by line).
+- Fix: robots.txt redirects are now followed (RFC 9309 §2.3.1.2), max 2 hops, https and
+  public only; a longer chain = no restrictions. Profile and agent-card redirects are still
+  never followed. Tests: `test_robots_redirect_is_followed_and_applied_to_the_original_host`,
+  `test_robots_redirect_to_private_or_endless_chain_is_not_followed`. 104 tests green.
+
+## 2026-11-13 — built-in demo merchant
+- Why: the live round found no shop with AP2 declared, so the passing path could not be
+  shown or exercised on the site.
+- `ap2check/demo.py` + `ap2check/demo_data/` (UCP profile with AP2 capability and a P-256
+  public key; one UCP checkout response signed with it). Scenarios: `ready` (5 of 5),
+  `no_ap2` (Shopify-like, 2 of 5), `signature_failed` (total changed after signing, 4 of 5).
+- Runs through the normal fetcher and checks via an in-memory transport: this is the first
+  end-to-end pass of U1–A2 + M1 outside the test helpers (fixture signed by a separate
+  script, verified by the package).
+- Website buttons, `GET /api/demo/{scenario}`, `ap2check demo`. Browser check: "A shop that
+  passes" → "Set up to accept AP2 payment requests", 5 of 5, 8 OK. 107 tests green.
+
 ## Known limits
-- No live merchant with a UCP AP2 profile verified yet (next step; ask Tarek per site).
+- No live merchant with AP2 declared exists in our sample yet (see the live round above).
 - UCP signs the full checkout JSON; if a merchant's JCS differs from ours on exotic numbers
   (floats beyond double precision), a valid signature could be reported as failing. Our JCS
   matches the RFC 8785 test vector.

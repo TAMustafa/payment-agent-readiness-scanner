@@ -21,7 +21,7 @@ agents, with evidence and a fix for every finding.
    Processed in memory, never stored or logged; evidence never echoes its values.
 
 ## 3. Requests (read-only)
-At most three GETs per check, ≥ 1 s apart, identified as
+Three files per check (plus at most two redirect hops for robots.txt only, RFC 9309), ≥ 1 s apart, identified as
 `AP2ReadinessCheck/<version> (+AP2CHECK_CONTACT_URL)`:
 `/robots.txt`, `/.well-known/ucp`, `/.well-known/agent-card.json`.
 HTTPS only, redirects never followed (UCP forbids following them), private addresses refused
@@ -79,6 +79,11 @@ testable read-only; sample privacy.
   for your developer" and "Download full report (JSON)" → all checks, problems unfolded and
   passed / not-checked ones folded → caveats folded. When rung 5 is current, a button opens
   the sample box. After a check the address bar holds `?url=<host>` (never the sample).
+- `GET /api/demo/{ready|no_ap2|signature_failed}` → `{report, sample}` for the built-in demo
+  shop `demo-shop.example` (static public documents in `ap2check/demo_data/`, served from
+  memory through the normal checks; no network). The page offers the three demos as buttons,
+  marks the result "Demo", and fills the form with the demo's domain and sample. A real
+  check of `demo-shop.example` is refused (422).
 - `GET /healthz`. No OpenAPI/docs endpoints in production.
 
 ## 7. Out of scope / later
@@ -90,6 +95,7 @@ testable read-only; sample privacy.
 
 ## 8. Build steps
 1. ✅ Checks U1–U5, A1–A2, G1–G2, M1 with fixture tests; CLI; website (2026-11-13).
+1b. ✅ Built-in demo merchant (passing, no-AP2 and broken-signature reports) (2026-11-13).
 2. Live verification against public UCP profiles (needs Tarek's go-ahead per site) and a
    sample merchant built from the AP2 v0.2 Python sample; record in `docs/VERIFY.md`.
 3. Deploy (host + domain + contact URL), then pilots with merchants/agencies.

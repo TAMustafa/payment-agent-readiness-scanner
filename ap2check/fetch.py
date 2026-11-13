@@ -10,6 +10,7 @@ Rules (CLAUDE.md "Non-negotiable rules"):
   because the website lets anyone submit a URL (SSRF guard). Limit: DNS rebinding between our
   lookup and httpx's own lookup is not prevented; redirects are off, which removes the
   common bypass.
+- Only robots.txt redirects are followed (RFC 9309), at most two hops, each checked.
 - Respects robots.txt for our own product token; at most 1 request/second per host; a small
   fixed request budget per check; body read capped; Set-Cookie dropped; no cookie jar.
 """
@@ -23,7 +24,7 @@ import socket
 import time
 from collections.abc import Awaitable, Callable
 from types import TracebackType
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -34,7 +35,9 @@ from ap2check.robots import RobotsTxt, robots_from_resource
 ROBOTS_TOKEN = "AP2ReadinessCheck"
 DEFAULT_CONTACT_URL = "https://contact-url-not-configured.invalid"
 MAX_BODY_BYTES = 1_000_000  # UCP consumers must accept >= 128 KiB; we read more to report size
-MAX_REQUESTS = 3  # robots.txt, /.well-known/ucp, /.well-known/agent-card.json
+ROBOTS_REDIRECTS = 2
+# robots.txt (+ its redirects), /.well-known/ucp, /.well-known/agent-card.json
+MAX_REQUESTS = 3 + ROBOTS_REDIRECTS
 TIMEOUT_S = 10.0
 _LOCAL_SUFFIXES = (".localhost", ".local", ".internal", ".lan", ".home.arpa", ".test")
 
@@ -141,9 +144,30 @@ class Fetcher:
 
     async def _robots_for(self, origin: str) -> RobotsTxt | None:
         if origin not in self._robots:
-            res = await self._send(f"{origin}/robots.txt", urlsplit(origin).hostname or "")
-            self._robots[origin] = robots_from_resource(res) if res.status_code else None
+            self._robots[origin] = await self._fetch_robots(f"{origin}/robots.txt")
         return self._robots[origin]
+
+    async def _fetch_robots(self, url: str) -> RobotsTxt | None:
+        """robots.txt is the one file whose redirects we follow: RFC 9309 §2.3.1.2 says
+        crawlers SHOULD follow them and use the result for the original host (shops often
+        redirect www <-> apex). At most ROBOTS_REDIRECTS hops, each https and public; a
+        longer or broken chain counts as "unavailable" = no restrictions, as the RFC allows.
+        Seen on www.stoov.com (301 to the apex), 2026-11-13."""
+        for _ in range(ROBOTS_REDIRECTS + 1):
+            parts = urlsplit(url)
+            host = (parts.hostname or "").lower()
+            if parts.scheme != "https" or await self._refusal(host):
+                return RobotsTxt.allow_all()
+            res = await self._send(url, host)
+            if res.status_code is None:
+                return None
+            if not 300 <= res.status_code < 400:
+                return robots_from_resource(res)
+            location = res.headers.get("location")
+            if not location:
+                break
+            url = urljoin(url, location)
+        return RobotsTxt.allow_all()
 
     async def _send(self, url: str, host: str) -> FetchedResource:
         if len(self.log) >= self.max_requests:

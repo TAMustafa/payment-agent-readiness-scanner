@@ -113,10 +113,14 @@ function summaryText(report) {
   return lines.join("\n");
 }
 
-function renderReport(report) {
+function renderReport(report, demoTitle) {
   const out = $("result");
   out.replaceChildren();
   origin = report.target;
+  if (demoTitle) {
+    out.append(el("p", { class: "demo-banner" },
+      `Demo: “${demoTitle}”. This is a built-in example shop, not a real merchant.`));
+  }
 
   // 1. Verdict + where you stand
   const verdict = el("div", { class: `card verdict ${report.verdict.level}` });
@@ -241,8 +245,32 @@ async function onSubmit(ev) {
   }
 }
 
+async function onDemo(ev) {
+  const button = ev.currentTarget;
+  const err = $("form-error");
+  err.hidden = true;
+  button.disabled = true;
+  try {
+    const resp = await fetch(`/api/demo/${encodeURIComponent(button.dataset.demo)}`);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || `The demo failed (HTTP ${resp.status}).`);
+    // Show the inputs a merchant would have given, so the demo doubles as an example.
+    $("url").value = new URL(data.report.target).host;
+    $("sample").value = data.sample || "";
+    $("sample-box").open = Boolean(data.sample);
+    renderReport(data.report, button.textContent);
+    history.replaceState(null, "", location.pathname);
+  } catch (e) {
+    err.textContent = e.message || "The demo failed.";
+    err.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   $("check-form").addEventListener("submit", onSubmit);
+  document.querySelectorAll("[data-demo]").forEach((b) => b.addEventListener("click", onDemo));
   const q = new URLSearchParams(location.search).get("url");
   if (q) $("url").value = q;
 });

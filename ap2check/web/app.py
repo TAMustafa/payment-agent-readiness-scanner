@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ap2check import __version__
+from ap2check.demo import DEMO_HOST, SCENARIOS, run_demo
 from ap2check.fetch import Resolver, system_resolver
 from ap2check.models import Report
 from ap2check.runner import InvalidTarget, check_merchant, normalise_target
@@ -40,6 +41,11 @@ CSP = (
 class CheckRequest(BaseModel):
     url: str = Field(max_length=2048)
     sample: str | None = Field(default=None, max_length=256_000)
+
+
+class DemoResult(BaseModel):
+    report: Report
+    sample: str | None  # the checkout response the demo pasted, shown in the sample box
 
 
 class RateLimiter:
@@ -104,12 +110,29 @@ def create_app(
     async def healthz() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
+    @app.get("/api/demo/{scenario}")
+    async def api_demo(scenario: str, request: Request) -> DemoResult:
+        """Report for the built-in demo shop (ap2check/demo.py); sends no requests."""
+        if scenario not in SCENARIOS:
+            raise HTTPException(404, "Unknown demo.")
+        client = request.client.host if request.client else "unknown"
+        if not per_ip.allow(client):
+            raise HTTPException(429, "Too many checks from your address; try again in a minute.")
+        report, sample = await run_demo(scenario)
+        return DemoResult(report=report, sample=sample)
+
     @app.post("/api/check")
     async def api_check(body: CheckRequest, request: Request) -> Report:
         try:
             target = normalise_target(body.url)
         except InvalidTarget as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if target == f"https://{DEMO_HOST}":
+            raise HTTPException(
+                422,
+                "That is the built-in demo shop. Use the demo buttons, or "
+                "enter your own shop's domain.",
+            )
         client = request.client.host if request.client else "unknown"
         if not per_ip.allow(client):
             raise HTTPException(429, "Too many checks from your address; try again in a minute.")

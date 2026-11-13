@@ -141,6 +141,37 @@ async def test_s3_static_site_without_profile_is_not_discoverable() -> None:
     assert report.verdict.level == "not_discoverable", report.verdict
 
 
+async def test_robots_redirect_is_followed_and_applied_to_the_original_host() -> None:
+    # www -> apex redirect of robots.txt must not be read as "everything disallowed".
+    shop = merchant(profile())
+    shop.routes[f"{SHOP}/robots.txt"] = (301, "", {"location": "https://example.nl/robots.txt"})
+    shop.routes["https://example.nl/robots.txt"] = (200, "User-agent: *\nDisallow: /cart\n")
+    report = await run(shop)
+    assert report.verdict.level == "untested", report.verdict
+    assert [str(r.url) for r in shop.requests][:2] == [
+        f"{SHOP}/robots.txt",
+        "https://example.nl/robots.txt",
+    ]
+    # The redirected robots.txt still binds us.
+    shop = merchant(profile())
+    shop.routes[f"{SHOP}/robots.txt"] = (301, "", {"location": "https://example.nl/robots.txt"})
+    shop.routes["https://example.nl/robots.txt"] = (200, "User-agent: *\nDisallow: /.well-known/\n")
+    assert (await run(shop)).verdict.level == "unknown"
+
+
+async def test_robots_redirect_to_private_or_endless_chain_is_not_followed() -> None:
+    shop = merchant(profile())
+    shop.routes[f"{SHOP}/robots.txt"] = (302, "", {"location": "https://127.0.0.1/robots.txt"})
+    report = await run(shop)
+    assert all(r.url.host == "shop.example.nl" for r in shop.requests)
+    assert report.verdict.level == "untested"
+    shop = merchant(profile())
+    shop.routes[f"{SHOP}/robots.txt"] = (302, "", {"location": f"{SHOP}/robots.txt"})
+    report = await run(shop)
+    assert shop.paths().count("/robots.txt") == 3 and len(shop.requests) == 5
+    assert report.verdict.level == "untested"
+
+
 async def test_robots_disallow_is_respected() -> None:
     shop = merchant(profile(), robots="User-agent: AP2ReadinessCheck\nDisallow: /.well-known/\n")
     report = await run(shop)
@@ -198,6 +229,41 @@ async def test_api_check_returns_report() -> None:
         assert r.status_code == 200, r.text
         assert r.json()["verdict"]["level"] == "ready"
         assert r.headers["cache-control"] == "no-store"
+
+
+async def test_demo_scenarios_cover_the_ladder() -> None:
+    from ap2check.demo import DEMO_NOTE, SCENARIOS, run_demo
+
+    expected = {"ready": "ready", "no_ap2": "no_ap2", "signature_failed": "signature_failed"}
+    assert set(SCENARIOS) == set(expected)
+    for name, level in expected.items():
+        report, sample = await run_demo(name)
+        assert report.verdict.level == level, name
+        assert report.target == "https://demo-shop.example" and report.notes[0] == DEMO_NOTE
+        assert (sample is None) == (name == "no_ap2")
+    ready, _ = await run_demo("ready")
+    assert all(r.status in ("pass", "not_applicable") for r in ready.results)
+    assert all(s.state == "done" for s in ready.steps)
+
+
+def test_demo_fixture_holds_public_data_only() -> None:
+    from ap2check.demo import DATA
+
+    profile_doc = json.loads((DATA / "profile.json").read_text())
+    assert all(set(k) <= {"kid", "kty", "crv", "x", "y", "use", "alg"} for k in profile_doc["keys"])
+    assert "PRIVATE KEY" not in "".join(p.read_text() for p in DATA.iterdir())
+
+
+async def test_api_demo() -> None:
+    shop = merchant(None)
+    async with client(shop) as c:
+        r = await c.get("/api/demo/ready")
+        assert r.status_code == 200 and r.json()["report"]["verdict"]["level"] == "ready"
+        assert "merchant_authorization" in r.json()["sample"]
+        assert (await c.get("/api/demo/nope")).status_code == 404
+        r = await c.post("/api/check", json={"url": "demo-shop.example"})
+        assert r.status_code == 422 and "demo" in r.json()["detail"]
+    assert shop.requests == []  # the demo never touches the network
 
 
 async def test_api_rejects_private_and_oversized() -> None:
