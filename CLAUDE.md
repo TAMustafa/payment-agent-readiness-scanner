@@ -18,7 +18,7 @@ changing any check. AP2 v0.2 is pre-release (FIDO standardisation); never claim 
 agents will send orders, or that agent checkout is live in a given market.
 
 ## Current status (2026-11-13) — start here
-- Built: checks U1–U5, A1–A2, G1–G2, M1, verdict, CLI, FastAPI website. 96 tests green;
+- Built: checks U1–U5, A1–A2, G1–G2, M1, verdict, CLI, FastAPI website. 99 tests green;
   ruff + mypy --strict clean. Log: `docs/VERIFY.md`.
 - **Next:** live verification against real UCP profiles (ask Tarek per site) and a sample
   merchant from the AP2 v0.2 Python sample; then deployment (host, domain, contact URL).
@@ -107,4 +107,4 @@ class CheckResult(BaseModel):
 - `uv sync`
 - `uv run --env-file .env ap2check serve` (website, http://127.0.0.1:8000)
 - `uv run --env-file .env ap2check check shop.example.com [--sample file] [--json]`
-- `uv run ruff check . && uv run mypy ap2check && uv run pytest` (≈1 s, 96 tests)
+- `uv run ruff check . && uv run mypy ap2check && uv run pytest` (≈1 s, 99 tests)

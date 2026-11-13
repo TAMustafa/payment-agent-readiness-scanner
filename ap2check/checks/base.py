@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ap2check.models import CheckResult, CheckStatus, Evidence, Stage
+from ap2check.models import CheckResult, CheckStatus, Evidence, FetchedResource, Stage
 
 UCP_VERSION = "2026-08-25"
 UCP_OVERVIEW = f"https://ucp.dev/{UCP_VERSION}/specification/overview/"
@@ -177,3 +177,17 @@ def ucp_obj(profile: Any) -> dict[str, Any] | None:
 
 def as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def s3_missing_object(res: FetchedResource | None) -> bool:
+    """Amazon S3 answers a *missing* object with 403 AccessDenied when the bucket does not
+    grant s3:ListBucket (https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html,
+    "Permissions"), and CloudFront passes that through. Treat exactly that response as
+    "not found"; any other 403 stays "blocked / unverifiable". Seen on tarek-ai.com
+    (Hugo on S3 + CloudFront), 2026-11-13."""
+    return (
+        res is not None
+        and res.status_code == 403
+        and "amazons3" in res.headers.get("server", "").lower()
+        and "<Code>AccessDenied</Code>" in (res.body or "")
+    )

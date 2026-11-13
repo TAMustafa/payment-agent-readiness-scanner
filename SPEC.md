@@ -35,7 +35,7 @@ Status conventions: `pass` / `warn` / `fail`; blocked, rate-limited or unverifia
 
 | ID | Stage | Pass when | Warn | Fail |
 |---|---|---|---|---|
-| U1.profile_reachable | discovery | `/.well-known/ucp`: 200, JSON, ≤ 128 KiB | > 128 KiB | 3xx (no redirects allowed), 404, not JSON. 401/403/429/5xx/network → error |
+| U1.profile_reachable | discovery | `/.well-known/ucp`: 200, JSON, ≤ 128 KiB | > 128 KiB | 3xx (no redirects allowed), 404, Amazon S3 `403 AccessDenied` (S3's answer for a missing file), not JSON. Other 401/403, 429, 5xx, network → error |
 | U2.profile_structure | discovery | `ucp.version`, `ucp.services`, `ucp.payment_handlers` present; transports valid; endpoints https | version < 2026-08-25 | missing field, bad transport, endpoint missing / not https |
 | U3.profile_caching | discovery | `Cache-Control` has `public`, `max-age ≥ 60`, no `private`/`no-store`/`no-cache`; ETag or Last-Modified | no validator | any MUST broken |
 | U4.checkout_capability | checkout | `dev.ucp.shopping.checkout` declared and a rest/mcp/a2a endpoint exists | – | either missing |

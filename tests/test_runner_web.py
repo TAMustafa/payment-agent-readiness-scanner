@@ -100,6 +100,19 @@ async def test_redirect_is_not_followed() -> None:
     assert report.results[0].status == "fail"
 
 
+async def test_s3_static_site_without_profile_is_not_discoverable() -> None:
+    denied = (
+        403,
+        '<?xml version="1.0"?><Error><Code>AccessDenied</Code></Error>',
+        {"server": "AmazonS3", "content-type": "application/xml"},
+    )
+    shop = merchant(None)
+    shop.routes[f"{SHOP}/.well-known/ucp"] = denied
+    shop.routes[f"{SHOP}/.well-known/agent-card.json"] = denied
+    report = await run(shop)
+    assert report.verdict.level == "not_discoverable", report.verdict
+
+
 async def test_robots_disallow_is_respected() -> None:
     shop = merchant(profile(), robots="User-agent: AP2ReadinessCheck\nDisallow: /.well-known/\n")
     report = await run(shop)

@@ -79,6 +79,51 @@ def test_404_is_fail() -> None:
     assert profile.u1_profile_reachable(inp(None, status=404)).status == "fail"
 
 
+S3_DENIED = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>AccessDenied</Code>'
+    "<Message>Access Denied</Message></Error>"
+)
+
+
+def s3_403(path: str) -> FetchedResource:
+    return FetchedResource(
+        url=f"{SHOP}{path}",
+        status_code=403,
+        headers={"server": "AmazonS3", "content-type": "application/xml"},
+        body=S3_DENIED,
+    )
+
+
+def test_s3_access_denied_means_not_found() -> None:
+    # S3 (often behind CloudFront) answers a missing object with 403 AccessDenied when
+    # the bucket does not allow listing; seen live on tarek-ai.com, 2026-11-13.
+    i = inp(None).model_copy(
+        update={
+            "profile": s3_403("/.well-known/ucp"),
+            "profile_json": None,
+            "agent_card": s3_403("/.well-known/agent-card.json"),
+        }
+    )
+    r = profile.u1_profile_reachable(i)
+    assert r.status == "fail" and "Amazon S3" in details(r)
+    assert agent_card.g1_agent_card(i).status == "not_applicable"
+
+
+def test_other_403_stays_error() -> None:
+    # A WAF / bot-protection 403 must not be guessed as "not found".
+    i = inp(None, status=403, headers={"server": "cloudflare"})
+    assert profile.u1_profile_reachable(i).status == "error"
+    s3_other = s3_403("/.well-known/ucp").model_copy(
+        update={"body": "<Error><Code>AllAccessDisabled</Code></Error>"}
+    )
+    assert (
+        profile.u1_profile_reachable(
+            inp(None).model_copy(update={"profile": s3_other, "profile_json": None})
+        ).status
+        == "error"
+    )
+
+
 def test_missing_registries_fail_u2() -> None:
     p = make_profile()
     del p["ucp"]["payment_handlers"]

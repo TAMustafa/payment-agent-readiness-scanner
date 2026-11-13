@@ -22,6 +22,18 @@ The scanner-era log (reference shops, probe runs, V1 costs) is in git history at
 - Browser check (local server): `example.com` → "AI agents cannot find your AP2 setup", U1
   fail (404), dependent checks n/a; layout OK at 375 px and desktop, dark mode.
 
+## 2026-11-13 — live check tarek-ai.com (Tarek's own site)
+- Result before fix: "We could not read your setup" (U1/G1 error, HTTP 403). Wrong.
+- Cause (curl, our UA and a browser UA alike): Hugo site on Amazon S3 behind CloudFront.
+  Every missing path, e.g. `/this-page-does-not-exist-xyz`, returns `403` with
+  `server: AmazonS3` and `<Code>AccessDenied</Code>`, because S3 reports missing objects as
+  403 when the bucket does not allow listing. `/`, `/robots.txt`, `/sitemap.xml` are 200.
+- Fix: `checks/base.py::s3_missing_object`. Exactly that S3 response is read as "not found"
+  (U1 fail, G1 n/a); any other 403 (WAF, Cloudflare, other S3 codes) stays `error`.
+  Tests: `test_s3_access_denied_means_not_found`, `test_other_403_stays_error`,
+  `test_s3_static_site_without_profile_is_not_discoverable`. 99 tests green.
+- Result after fix: "AI agents cannot find your AP2 setup" (correct: no profile, no card).
+
 ## Known limits
 - No live merchant with a UCP AP2 profile verified yet (next step; ask Tarek per site).
 - UCP signs the full checkout JSON; if a merchant's JCS differs from ours on exotic numbers

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ap2check.checks.base import AP2_A2A_EXTENSION, result
+from ap2check.checks.base import AP2_A2A_EXTENSION, result, s3_missing_object
 from ap2check.models import CheckInput, CheckResult, Evidence
 
 REQUIRED_1_0 = (
@@ -44,10 +44,13 @@ def g1_agent_card(inp: CheckInput) -> CheckResult:
             "error",
             [Evidence(url=url, detail=f"could not fetch: {res.error if res else 'not fetched'}")],
         )
-    if res.status_code in (401, 403, 429) or res.status_code >= 500:
+    missing_on_s3 = s3_missing_object(res)
+    if not missing_on_s3 and (res.status_code in (401, 403, 429) or res.status_code >= 500):
         return result(cid, "error", [Evidence(url=url, detail=f"HTTP {res.status_code}")])
     if res.status_code != 200:
         detail = f"HTTP {res.status_code}: no agent card"
+        if missing_on_s3:
+            detail = "HTTP 403 AccessDenied from Amazon S3: no agent card (file does not exist)"
         if 300 <= res.status_code < 400:
             detail = f"HTTP {res.status_code} redirect to {res.headers.get('location', '?')}"
         # Optional channel: only a problem when there is no UCP profile either (verdict).

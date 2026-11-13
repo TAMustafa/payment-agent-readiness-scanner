@@ -17,6 +17,7 @@ from ap2check.checks.base import (
     as_dict,
     entries,
     result,
+    s3_missing_object,
     ucp_obj,
 )
 from ap2check.jose import JoseError, ec_key_from_jwk
@@ -61,6 +62,18 @@ def u1_profile_reachable(inp: CheckInput) -> CheckResult:
                     url=url,
                     detail=f"HTTP {res.status_code} redirect to {loc}; "
                     "UCP profile endpoints MUST NOT redirect and agents will not follow it",
+                )
+            ],
+        )
+    if s3_missing_object(res):
+        return result(
+            cid,
+            "fail",
+            [
+                Evidence(
+                    url=url,
+                    detail="HTTP 403 AccessDenied from Amazon S3: the file does not exist "
+                    "(S3 reports missing files this way when bucket listing is not allowed)",
                 )
             ],
         )
