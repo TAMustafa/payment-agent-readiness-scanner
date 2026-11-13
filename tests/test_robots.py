@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from scanner.fetch.robots import RobotsTxt, robots_from_resource
-from scanner.models import FetchedResource
+from ap2check.models import FetchedResource
+from ap2check.robots import RobotsTxt, robots_from_resource
 from tests.conftest import fixture
 
 

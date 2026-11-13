@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AP2 Readiness Check</title>
+  <meta name="description" content="Check whether your shop is set up to accept AP2 (Agent Payments Protocol) payment requests from AI shopping agents.">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <p class="eyebrow">Agent Payments Protocol · AP2 v0.2</p>
+      <h1>Can AI agents pay at your shop?</h1>
+      <p class="lede">
+        Enter your domain. We read your public UCP profile and A2A agent card, check your
+        AP2 declaration and signing keys against the published specs and, if you paste
+        one checkout response, verify your merchant signature.
+      </p>
+    </header>
+
+    <form id="check-form" class="card form" novalidate>
+      <label for="url">Shop domain</label>
+      <div class="row">
+        <input id="url" name="url" type="text" inputmode="url" autocomplete="url"
+               placeholder="shop.example.com" required maxlength="2048">
+        <button id="submit" type="submit">Check</button>
+      </div>
+
+      <details id="sample-box">
+        <summary>Verify your checkout signature (optional)</summary>
+        <p class="hint">
+          Paste one checkout response from your <strong>test</strong> checkout: a UCP
+          checkout JSON with <code>ap2.merchant_authorization</code>, or an AP2
+          <code>checkout_jwt</code>. It is checked in memory and never stored. Do not paste
+          real customer data.
+        </p>
+        <textarea id="sample" name="sample" rows="7" spellcheck="false" maxlength="256000"
+                  placeholder='{"id": "chk_123", "line_items": [...], "ap2": {"merchant_authorization": "eyJhbGciOiJFUzI1NiIsImtpZCI6..."}}'></textarea>
+      </details>
+
+      <p class="fineprint">
+        Read-only: we send at most three GET requests to your domain (robots.txt,
+        /.well-known/ucp, /.well-known/agent-card.json) and never call your checkout.
+      </p>
+      <p id="form-error" class="error" role="alert" hidden></p>
+    </form>
+
+    <section id="result" aria-live="polite" hidden></section>
+
+    <footer class="foot">
+      <p>
+        Based on
+        <a href="https://ap2-protocol.org/ap2/specification/">AP2 v0.2</a>,
+        <a href="https://ucp.dev/2026-08-25/specification/payment/extensions/ap2-mandates/">UCP 2026-08-25 AP2 mandates</a>
+        and <a href="https://a2a-protocol.org/latest/specification/">A2A 1.0</a>.
+        AP2 is a pre-release protocol under standardisation at the FIDO Alliance.
+      </p>
+    </footer>
+  </main>
+
+  <template id="tpl-check">
+    <article class="check">
+      <div class="check-head">
+        <span class="chip"></span>
+        <h3 class="check-label"></h3>
+        <code class="check-id"></code>
+      </div>
+      <ul class="evidence"></ul>
+      <div class="guidance" hidden>
+        <p class="guidance-title">How to fix</p>
+        <p class="guidance-text"></p>
+      </div>
+      <a class="spec" target="_blank" rel="noopener noreferrer">Spec</a>
+    </article>
+  </template>
+</body>
+</html>

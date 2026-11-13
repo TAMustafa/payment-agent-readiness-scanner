@@ -1,221 +1,84 @@
-# SPEC.md — agent-ready-scanner v1
+# SPEC — AP2 Readiness Check
 
-## 1. Goal and success criteria
-Produce, for any public Dutch webshop URL, a scored report (0–100) with evidence and the
-top 5 fixes, in under 2 minutes (4 minutes for Shopify shops, decided 2026-11-12), without
-any write interaction with the shop.
+Version 0.2 (2026-11-13). Supersedes the agent-ready-scanner spec (in git history up to
+commit 4cd9af7). Background and sources: `docs/AP2.md`.
 
-v1 is done when:
-- [ ] Scans complete without crash on all 5 reference shops (section 7).
-- [ ] For each reference shop, every check result matches a manual verification
-      (logged in `docs/VERIFY.md`); tolerance: max 1 disputed check per shop.
-- [ ] Report is understandable by a non-technical merchant without explanation
-      (tested with 1 real merchant).
-- [ ] Cost of the visibility check is logged per scan and stays under USD 1.40 per scan
-      and USD 10 per month (changed 2026-11-10, was €0.50: measured ≈ USD 1.15 per full
-      scan with ChatGPT + Gemini, approved by Tarek 2026-11-09).
+## 1. Product
+A website (plus CLI) where a merchant enters their domain and learns whether they are set up
+correctly to **accept AP2 (Agent Payments Protocol) payment requests** from AI shopping
+agents, with evidence and a fix for every finding.
 
-## 2. Out of scope for v1
-- Placing orders, logging in, or any payment step
-- Merchant Center / Ads Manager API access (manual input only, see D5)
-- Web UI, user accounts, database (JSON files per scan in `./scans/<host>/<timestamp>/`)
-- Non-Dutch market specifics
+- Free self-check → lead magnet for a paid setup sprint (keys, profile, signing,
+  mandate verification) → monitoring.
+- Target: merchants and their developers / agencies / PSPs implementing UCP + AP2.
+- English report. Honest about maturity: AP2 v0.2 is pre-release (FIDO standardisation).
 
-## 3. Scan flow
-1. Normalise URL, resolve redirects, record final origin and HTTPS status.
-2. Fetch `robots.txt`, `sitemap.xml` (and sitemap index), `/.well-known/ucp`.
-3. Fingerprint platform (section 6).
-4. Sample pages: up to 8 product pages, 2 category pages, policy pages
-   (shipping, returns, terms, privacy). Prefer sitemap; fall back to link crawl from home.
-   Product page detection: JSON-LD `Product` (one per page), Product microdata, or
-   platform URL patterns.
-   *Changed 2026-11-08 (was 20 products / 3 categories):* shops that rate-limit polite
-   crawlers (Shopify: HTTP 429 + Retry-After 60 after ~10 requests) must still yield data
-   within the 2-minute budget. Sizes are configurable (`max_products`, `max_categories`).
-5. Run checks (section 4). Static checks use raw HTML; also render 3 product pages with
-   Playwright to compare (JSON-LD injected by JS is invisible to many crawlers → warn).
-6. Aggregate score (section 5), render JSON + HTML report.
+## 2. Inputs
+1. **Domain** (required). Normalised to `https://<host>[:port]`; private/local hosts refused.
+2. **Sample** (optional): one checkout response from the merchant's *test* checkout:
+   - UCP checkout JSON containing `ap2.merchant_authorization`, or
+   - an AP2 `checkout_jwt` (alone, or inside JSON such as the `ap2.checkout` DataPart).
+   Processed in memory, never stored or logged; evidence never echoes its values.
 
-## 4. Check catalogue
-Weights sum to 100. IDs are stable — never renumber.
+## 3. Requests (read-only)
+At most three GETs per check, ≥ 1 s apart, identified as
+`AP2ReadinessCheck/<version> (+AP2CHECK_CONTACT_URL)`:
+`/robots.txt`, `/.well-known/ucp`, `/.well-known/agent-card.json`.
+HTTPS only, redirects never followed (UCP forbids following them), private addresses refused
+by name and after DNS resolution, body capped at 1 MB, no cookies kept.
+The checker **never calls the merchant's checkout** (no POST anywhere in the package).
 
-### Category D — Discovery & access (30)
-| ID | Check | Weight | Pass / Warn / Fail |
-|---|---|---|---|
-| D1.robots_ai_crawlers | robots.txt allows AI search/agent user agents on product + category paths | 10 | Pass: all allowed. Warn: training-only bots blocked (fine, note it). Fail: search/agent bots blocked |
-| D2.edge_blocking | Requests with AI agent user agents get 200, not 403/429/challenge page | 8 | Fail if any search/agent UA is blocked by CDN/WAF (detect Cloudflare/Akamai challenge markers) |
-| D3.sitemap | Valid sitemap reachable, referenced in robots.txt, contains product URLs, lastmod present | 5 | Partial credit per sub-criterion |
-| D4.rendering | Product name, price, availability present in raw HTML (not only after JS) | 4 | Fail if price only appears after JS render |
-| D5.merchant_center | Google Merchant Center feed active and healthy (manual input: yes/no + disapproval %) | 3 | not_applicable if no input provided; never guessed |
+## 4. Checks
+Status conventions: `pass` / `warn` / `fail`; blocked, rate-limited or unverifiable →
+`error` (never a guessed fail); nothing to test or depends on a failed check →
+`not_applicable`. Every result carries evidence (URL, header, snippet) and a spec URL.
 
-User agents to test (verify the current official list per vendor before implementing;
-cite source URLs in code): OpenAI `OAI-SearchBot`, `ChatGPT-User`, `GPTBot` (training);
-Perplexity `PerplexityBot`, `Perplexity-User`; Anthropic `ClaudeBot`, `Claude-User`,
-`Claude-SearchBot`; Google `Googlebot` + `Google-Extended` token (training control);
-Microsoft `Bingbot`; Apple `Applebot`, `Applebot-Extended`.
-Classify each as `search`, `user_agent` (fetch on behalf of a user) or `training`.
-Blocking `training` only = warn with neutral wording (merchant's choice).
+| ID | Stage | Pass when | Warn | Fail |
+|---|---|---|---|---|
+| U1.profile_reachable | discovery | `/.well-known/ucp`: 200, JSON, ≤ 128 KiB | > 128 KiB | 3xx (no redirects allowed), 404, not JSON. 401/403/429/5xx/network → error |
+| U2.profile_structure | discovery | `ucp.version`, `ucp.services`, `ucp.payment_handlers` present; transports valid; endpoints https | version < 2026-08-25 | missing field, bad transport, endpoint missing / not https |
+| U3.profile_caching | discovery | `Cache-Control` has `public`, `max-age ≥ 60`, no `private`/`no-store`/`no-cache`; ETag or Last-Modified | no validator | any MUST broken |
+| U4.checkout_capability | checkout | `dev.ucp.shopping.checkout` declared and a rest/mcp/a2a endpoint exists | – | either missing |
+| U5.payment_handlers | checkout | ≥ 1 entry in `ucp.payment_handlers` | – | empty |
+| A1.ap2_capability | ap2 | `dev.ucp.common.payment.ap2_mandate` declared, version ≥ 2026-08-25, extends checkout, `vp_formats_supported` has `dc+sd-jwt` | version/extends/format issues | not declared, or checkout capability missing |
+| A2.signing_keys | ap2 | top-level `keys[]` has a valid public EC P-256 key with `kid` (point on curve, `use` sig, `alg` matches) | only P-384/P-521 keys (agents must only support ES256) | no keys, keys inside `ucp`, private material (`d`) published, duplicate/missing kid, invalid point, only OKP keys |
+| G1.agent_card | a2a | A2A 1.0 card with required fields, https interfaces | A2A 0.3-style card (as in the AP2 samples) | not JSON, required field missing, http interface. 404 → n/a |
+| G2.ap2_extension | a2a | `capabilities.extensions` has `https://github.com/google-agentic-commerce/ap2/v1` with `required: true` | not required, or AP2-like other URI | card without AP2 extension. No card → n/a |
+| M1.merchant_signature | signature | sample signature verifies with the published key of its `kid` | A2A payload lacks merchant/checkout fields or `exp` | not detached / not compact, alg not ES*, EdDSA, unknown kid, bad signature, `checkout_hash` mismatch, missing `merchant_authorization`. No published keys → error. No sample → n/a |
 
-### Category S — Structured product data (30)
-Measured over sampled product pages; score = share of pages passing.
-| ID | Check | Weight | Criteria |
-|---|---|---|---|
-| S1.product_jsonld | Valid JSON-LD `Product` with `name`, `image`, `description` | 6 | Parseable, one Product per page (or ProductGroup with variants) |
-| S2.offer | `offers` with `price`, `priceCurrency`=EUR, `availability`, `url` | 8 | Price matches visible price (±0.01) |
-| S3.identifiers | `gtin`/`gtin13`, `mpn` or `sku`, and `brand` | 6 | Pass ≥80% of pages have GTIN or MPN+brand |
-| S4.shipping_returns | `shippingDetails` (OfferShippingDetails) and `hasMerchantReturnPolicy` on offer or Organization | 5 | Either level accepted |
-| S5.reviews | `aggregateRating` with `ratingValue` + `reviewCount` where reviews are shown | 2 | not_applicable if shop shows no reviews |
-| S6.organization | `Organization`/`OnlineStore` with name, url, logo, contactPoint, KvK or VAT if shown | 3 | Present on home page |
+M1 details: UCP form verifies the detached JWS over JCS (RFC 8785) of the checkout without
+`ap2` (honours RFC 7797 `b64:false`); A2A form verifies the compact JWS and recomputes
+`checkout_hash` = base64url(sha-256(checkout_jwt)). An expired sample is a note, not a warn.
 
-### Category C — Checkout readiness for browser agents (20)
-Playwright probe: open a product page, add the cheapest in-stock simple product to cart,
-open checkout. STOP before entering any personal data. Never click pay/order buttons.
-| ID | Check | Weight | Criteria |
-|---|---|---|---|
-| C1.add_to_cart | Add-to-cart works headless without captcha or bot challenge | 5 | Fail on challenge, warn on >2 interstitials (cookie walls count once) |
-| C2.guest_checkout | Checkout reachable without forced account creation | 6 | Detect login wall vs guest option |
-| C3.payment_methods | Cards (Visa/Mastercard/Amex or Apple/Google Pay) **and** iDEAL / Wero listed on checkout or payment info page; note PayPal, Klarna | 4 | Pass if both; warn 0.5 if one (changed 2026-11-10: ACP and Google UCP agent payments are card-based, see `docs/RELEVANCE.md`) |
-| C4.captcha_checkout | No captcha on checkout entry | 3 | Detect reCAPTCHA, hCaptcha, Turnstile markers |
-| C5.policies_clear | Shipping cost/time and return window stated in plain text on policy pages | 2 | Regex for days/costs in NL + EN |
-If the probe cannot reach checkout for a technical reason → `error`, not `fail`.
+## 5. Verdict (no numeric score)
+Evaluated in order:
+1. **unknown**: U1 error and no AP2 agent card (blocked, robots, DNS refusal).
+2. **not_discoverable**: no usable profile and no agent card with the AP2 extension.
+3. **no_ap2**: A1 not pass/warn and G2 not pass/warn.
+4. **incomplete**: any fail in U2–U5, A1, A2 (and G1/G2 when a card exists); or AP2 only via
+   an agent card (AP2 defines no key publication outside a UCP profile).
+5. **ready**: M1 pass/warn. **signature_failed**: M1 fail/error. Otherwise **untested**.
 
-*Probe decisions (Tarek, 2026-11-08):*
-- robots.txt is respected for every probe navigation and for the likely checkout destination
-  before clicking "checkout". If disallowed, C1–C4 are `not_applicable` ("not tested").
-  `--checkout-consent` lifts this only for scans the merchant asked for.
-- Page loads: images, fonts, media and known trackers are blocked; >= 1 s between
-  navigations via the shared per-host limiter (incl. Retry-After); each navigation counts
-  against the page budget.
-- Cookie banners: click reject / "alleen noodzakelijk" first; only if absent, accept (counted
-  as one interstitial).
-- The probe runs before the check fan-out, so C-checks are plain functions over its data.
-- C3: privacy pages are not a source (they list processors); `fail` only when the checkout
-  page itself was seen without cards and iDEAL/Wero. *Changed 2026-11-12:* unverifiable →
-  `error` (not measured), never a guessed warn: no payment information at all, neither found
-  on home/policy pages without the checkout test, or a checkout entry page without any
-  payment marker (the payment step comes later and is never opened).
-- The probe is **opt-in** (`--checkout`, or `--checkout-consent` for merchant-requested
-  scans); default scans report C1, C2 and C4 as "not tested".
-- D2 test requests carry the bot's User-Agent plus our own identity (no impersonation).
+Standing notes on every report: AP2 maturity; mandate verification by the merchant is not
+testable read-only; sample privacy.
 
-### Category P — Agent protocols (10)
-| ID | Check | Weight | Criteria |
-|---|---|---|---|
-| P1.ucp_profile | `/.well-known/ucp` returns valid JSON profile | 5 | Validate against current spec at ucp.dev (fetch schema; cite version). *2026-11-12:* no payment handler or no checkout capability declared → warn (−0.3): agents can read but not pay |
-| P2.platform_support | Platform has an available agentic channel/plugin (lookup table, section 6) | 3 | Informational scoring: pass if enabled, warn if available but not enabled |
-| P3.mcp_or_feed_endpoint | Public MCP endpoint or agent-readable product feed discoverable | 2 | warn, never fail, in v1 (emerging) |
-Report copy must state: agent checkout via ACP/UCP is not yet live in NL; P-checks
-measure readiness for launch.
+## 6. Website
+- `GET /` static page (HTML/CSS/JS, no build step, strict CSP `script-src 'self'`).
+- `POST /api/check` `{url, sample?}` → report JSON. URL ≤ 2 kB, sample ≤ 256 kB.
+- Limits: 6 checks/min per visitor IP, 4/min per checked host, 4 concurrent checks; 429/503
+  with a readable message. No persistence; `Cache-Control: no-store` on the API.
+- All report text is rendered with `textContent` (third-party JSON is untrusted).
+- `GET /healthz`. No OpenAPI/docs endpoints in production.
 
-### Category V — AI visibility (10)
-| ID | Check | Weight | Criteria |
-|---|---|---|---|
-| V1.prompt_visibility | Shop mentioned for N buying prompts across ≥2 assistants with web search | 10 | Score = mention rate; record position + cited URL |
-Inputs: 10 prompts, generated from shop category + 2 brand prompts + 8 non-brand
-(Dutch language, e.g. "beste e-bike accu kopen nederland"). Operator can override prompts.
-Implement as a LangGraph subgraph (prompt generation -> parallel assistant calls via Send -> parse mentions). Store raw responses. Run 2x and report both runs (results are non-deterministic).
-Mark clearly as "snapshot, varies over time". Behind `--visibility` flag (costs money).
-*Decided 2026-11-09 (Tarek):* all calls via **OpenRouter** with the providers' native web
-search; assistants **ChatGPT + Gemini** (models in `config/visibility.toml`); generic prompts
-from the scanned shop's own categories, fixed Dutch templates; **budget max EUR 10/month**
-(USD 10 cap: OpenRouter key limit + local ledger + per-call reservation). Measured live: full
-run ≈ USD 1.15 per scan (approved by Tarek; ≈ 8 scans/month). Details: `docs/VERIFY.md`.
-
-## 5. Scoring and report
-*Scope decision (Tarek, 2026-11-10, revised the same day):* the report measures readiness to
-be **found by AI agents and to accept their orders and payments**. Score, top fixes and HTML
-cover 19 checks in four stages: **1 Find and reach** (D1–D4), **2 Understand** (S1–S6, D5),
-**3 Check out** (C1–C5), **4 Connect** (P1–P3). Only V1 (paid AI-visibility snapshot) is out of
-scope: it runs on request and stays in `report.json` as `out_of_scope`. Weights are unchanged;
-the score is re-normalised over the in-scope checks, and there is no grade below 50 % measured
-weight. Each in-scope check gets a "why it matters" box (`scanner/report/i18n.py`).
-The bullets below apply within that scope.
-- Score = Σ(weight × scoreFraction) over checks not `not_applicable`/`error`,
-  re-normalised to 100. Show how many checks were excluded.
-- Grade: ≥80 Ready · 60–79 Partly ready · <60 Not ready.
-- *Changed 2026-11-12 (Tarek: "improve the scoring"):* a default scan measured 2 of 5
-  checkout checks and still showed "Check out: 100" and a grade; payments were drowned out by
-  the larger discovery weight. Now:
-  - A **stage** gets no score below 50 % of its weight measured.
-  - Two **verdicts**, each scored over its own checks and graded only when all its stages
-    have a score: **Found by AI agents** (stages 1–2) and **Orders and payments** (stages
-    3–4). "Orders and payments" therefore needs the checkout test (consent scan).
-  - The **overall grade** needs both verdicts graded (and ≥ 50 % coverage); the overall score
-    stays in `report.json` and is shown as one line when graded.
-  - The HTML shows a dial number only with a grade (no provisional numbers).
-- Top 5 fixes: sort failing/warning checks by (weight × (1−scoreFraction)) / effortFactor
-  (S=1, M=2, L=3). *2026-11-12:* P2 and P3 follow from a valid UCP profile and are folded into
-  the P1 fix ("also fixes"; their points are added) when P1 is itself a fix.
-- Report sections: summary + score, top 5 fixes, category details with evidence,
-  "what's coming" (agent checkout in NL), methodology + limitations.
-- Language: Dutch report with English fallback; all guidance strings stored per check in
-  `scanner/checks/copy/` with `nl` and `en`.
-- Outputs: `report.json` (validated by pydantic) and `report.html` (self-contained, printable).
-
-## 6. Platform fingerprinting and support table
-Detect via headers, generator meta, asset paths, cookies:
-Shopify (`cdn.shopify.com`, `Shopify.theme`), WooCommerce (`wp-content/plugins/woocommerce`,
-`woocommerce` body class), Shopware 6 (`/bundles/storefront`, `sw-` classes), Lightspeed eCom
-(`cdn.webshopapp.com`), Magento/Adobe Commerce (`Magento_`, `mage/`), other.
-
-Support table (`scanner/platform/support.py`, each row with source URL + date verified):
-- Shopify: Agentic Storefronts — US/CA shipping requirement noted; most NL-only shops ineligible
-- WooCommerce: third-party UCP plugins exist (quality varies — recommend staging)
-- Shopware 6: official "Agentic Commerce (Beta)" plugin (stability issues reported)
-- Lightspeed / Magento: no native channel known; feed-based approach
-Re-verify this table before each release; it changes monthly.
-
-*Verification 2026-11-08 (implemented in `scanner/platform/support.py`, sources cited there)
-differs from the rows above:*
-- Shopify: "enabled automatically for eligible stores"; criteria and NL availability are not
-  stated publicly. No source confirmed a US/CA shipping requirement. Shopify serves a UCP
-  profile at `/.well-known/ucp` when enabled (seen live on a Dutch Shopify shop).
-- WooCommerce: no official agentic checkout; Woo reports testing partner solutions (Stripe
-  ACP, Google). Third-party UCP plugins on wordpress.org not yet reviewed.
-- Shopware 6: no official Shopware AG "Agentic Commerce" plugin found; a third-party
-  extension (great2gether, "Great Agentic Commerce") exports AI feeds + llms.txt and does
-  not sell inside AI chats.
-  *Re-verified 2026-11-10:* Shopware AG now publishes an official plugin (SwagAgenticCommerce,
-  github.com/shopware/agentic-commerce, v1.4.0) with UCP, discovery files and feeds.
-- Magento/Adobe: no native channel; Adobe has announced UCP and ACP support (secondary
-  sources, re-verified 2026-11-10).
-- Shopify's old Storefront MCP endpoint `/api/mcp` was removed; MCP now via UCP
-  (`/api/ucp/mcp`).
-
-## 7. Reference shops for verification
-Pick 5 public Dutch shops, one per platform (Shopify, WooCommerce, Shopware, Lightspeed,
-Magento), ideally in the chosen niche. Record them in `docs/VERIFY.md` with the date.
-Do not hard-code them in source.
+## 7. Out of scope / later
+- Active mandate test (send an invalid `complete_checkout` to a merchant **sandbox**, expect
+  `mandate_required` / a signed error receipt): needs explicit merchant consent and an
+  allow-listed sandbox URL; would be the only write. Not built.
+- Signed A2A agent cards (JWS verification), x402, Payment Mandate checks (PSP side).
+- Dutch report copy; hosted deployment; saved reports / monitoring.
 
 ## 8. Build steps
-Status 2026-11-10: steps 1–4 **done** (see `docs/VERIFY.md`); pilots next.
-
-1. **CLI + static checks** *(done)*: project setup (uv, LangGraph skeleton graph with stub nodes first), fetch layer, robots, sitemap, sampling,
-   platform fingerprint, D1–D4, S1–S6, P1–P3, JSON output. Verify on fixtures + 5 shops.
-2. **Checkout probe** *(done)*: Playwright, C1–C5, screenshots saved as evidence. Opt-in
-   (`--checkout` / `--checkout-consent`), hard safety guards (`docs/SAFETY.md`).
-3. **AI visibility** *(done 2026-11-09; verified live)*: V1 behind flag, cost logging,
-   raw response storage. Via OpenRouter, hard budget caps (`docs/SAFETY.md`).
-4. **Report** *(done 2026-11-10)*: scoring, top 5 fixes, NL/EN HTML report
-   (`scanner report` re-renders a saved report.json).
-5. **Web front-end** (only after pilots): URL form → queued scan → report link.
-
-Each step ends with: tests green, VERIFY.md updated, short summary of what's verified,
-how, and what is not.
-
-## 9. Open questions (confirm with Tarek)
-- ~~Niche for the first outreach~~ — V1 builds prompts from each shop's categories (2026-11-09)
-- ~~Which assistants/APIs and monthly budget~~ — OpenRouter, ChatGPT + Gemini, EUR 10/month
-  (2026-11-09); 2 runs, plain httpx client (approved 2026-11-09)
-- (added 2026-11-09) V1 status thresholds: pass ≥ 60 % mentions, warn ≥ 30 % (initial choice)
-- Brand name of the service for report header (meanwhile `SCANNER_BRAND`, default
-  "Agent-Ready Scan")
-- (added 2026-11-10) Scoring reading: checks not run are excluded like not_applicable;
-  "+N points" per fix is the re-normalised score gain
-- ~~V1 prompt generation~~ — fixed templates (2026-11-09)
-- (added 2026-11-08) Effort sizes S/M/L per check (initial estimates in `registry.py`)
-- (added 2026-11-08) D5 thresholds: ≤ 5 % disapproved = pass, ≤ 20 % = warn (initial choice)
-- (added 2026-11-08) §6 support table: differences found vs. current vendor sources (above)
-- ~~(added 2026-11-08) Shopify shops yield 0–2 product pages per polite scan; accept, or
-  allow a longer scan for S-checks?~~ — longer scan: 240 s automatically when the
-  fingerprint says Shopify (2026-11-12; stoov.com 0 → 5 product pages)
+1. ✅ Checks U1–U5, A1–A2, G1–G2, M1 with fixture tests; CLI; website (2026-11-13).
+2. Live verification against public UCP profiles (needs Tarek's go-ahead per site) and a
+   sample merchant built from the AP2 v0.2 Python sample; record in `docs/VERIFY.md`.
+3. Deploy (host + domain + contact URL), then pilots with merchants/agencies.

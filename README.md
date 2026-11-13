@@ -1,78 +1,51 @@
-# agent-ready-scanner
+# AP2 Readiness Check
 
-Read-only scanner (Python + LangGraph) that audits how ready a Dutch webshop is for AI
-shopping agents (ChatGPT, Gemini / Google AI Mode, Perplexity, Claude, Copilot) and reports
-evidence-backed results per check. Built for merchants on WooCommerce, Shopify, Shopware 6,
-Lightspeed eCom and Magento.
+A website (and CLI) that tells a merchant whether they are set up correctly to accept
+**AP2 (Agent Payments Protocol)** payment requests from AI shopping agents. Read-only: it
+fetches the merchant's public discovery documents and, optionally, verifies the signature on
+one checkout response the merchant pastes in. It never calls the merchant's checkout.
 
-**Status (2026-11-09):** build steps 1–3 built and live-verified; step 4 (scoring + HTML
-report) is next — see [`docs/NEXT_STEP.md`](docs/NEXT_STEP.md).
+Based on AP2 v0.2 (2026-04-28, now under FIDO Alliance standardisation), UCP 2026-08-25
+(AP2 mandates extension) and A2A 1.0. Research notes: [`docs/AP2.md`](docs/AP2.md).
+Check catalogue and verdict rules: [`SPEC.md`](SPEC.md).
 
-| Category | Checks | Status |
-|---|---|---|
-| D — Discovery & access | D1 robots.txt for AI bots · D2 CDN/WAF blocking · D3 sitemap · D4 data in raw HTML (+ JS render compare) · D5 Merchant Center (manual input) | built |
-| S — Structured product data | S1 Product JSON-LD · S2 offer/price match · S3 GTIN/MPN+brand · S4 shipping & returns markup · S5 reviews · S6 Organization | built |
-| C — Checkout readiness | C1 add to cart · C2 guest checkout · C3 iDEAL/Wero · C4 captcha · C5 policy text | built (C1/C2/C4 need `--checkout`) |
-| P — Agent protocols | P1 UCP profile · P2 platform channel · P3 MCP / ai-catalog / llms.txt | built |
-| V — AI visibility | V1 mentions in ChatGPT + Gemini (via OpenRouter, max €10/month) | built and live-verified (`--visibility`) |
-| Scoring + HTML report | score, grade, top-5 fixes, NL/EN report | step 4 (not built; JSON only) |
+| Stage | Checks |
+|---|---|
+| Discovery | U1 `/.well-known/ucp` reachable (HTTPS, no redirect, JSON) · U2 required UCP fields · U3 cache headers |
+| Checkout | U4 checkout capability + callable endpoint · U5 payment handlers |
+| AP2 | A1 `dev.ucp.common.payment.ap2_mandate` declared · A2 public EC signing keys in `keys[]` |
+| A2A (optional) | G1 `/.well-known/agent-card.json` · G2 AP2 extension declared |
+| Signature | M1 `ap2.merchant_authorization` (detached JWS over JCS) or `checkout_jwt` verifies against the published key |
+
+Verdicts: not discoverable · AP2 not declared · incomplete · well-formed but untested ·
+signature failed · ready.
 
 ## Setup
 ```bash
 uv sync
-uv run playwright install chromium        # headless browser for the checkout probe
-cp .env.example .env                      # then set SCANNER_CONTACT_URL to a real page
+cp .env.example .env      # set AP2CHECK_CONTACT_URL (shown in our User-Agent)
 ```
-`SCANNER_CONTACT_URL` appears in our User-Agent (`AgentReadyScanner/<version> (+url)`); the
-CLI warns while it is unset. Run with `uv run --env-file .env scanner ...`.
-For V1 (step 3) add `OPENROUTER_API_KEY` — create the key with a USD 10 limit and monthly
-reset so OpenRouter itself enforces the budget (see `config/visibility.toml`).
 
 ## Usage
 ```bash
-uv run scanner scan https://example.nl                       # summary in the terminal
-uv run scanner scan https://example.nl --out scans/          # + scans/<host>/<ts>/report.json
-uv run scanner scan https://example.nl --checks D,S --json   # selected categories as JSON
-uv run scanner scan https://example.nl --gmc-active --gmc-disapproved-pct 3   # D5 input
-uv run scanner scan https://shop.nl --checkout --out scans/  # + cart/checkout probe
-uv run scanner scan https://shop.nl --checkout-consent --out scans/
-uv run --env-file .env scanner scan https://shop.nl --visibility --out scans/   # + V1 (paid)
-uv run scanner graph                                         # pipeline as Mermaid
+uv run --env-file .env ap2check serve                      # website on http://127.0.0.1:8000
+uv run --env-file .env ap2check check shop.example.com     # terminal summary
+uv run --env-file .env ap2check check shop.example.com --sample checkout.json --json
+uv run ruff check . && uv run mypy ap2check && uv run pytest
 ```
 
-| Option | Meaning |
-|---|---|
-| `--checks` | Comma-separated ids, codes or categories: `D1`, `S2.offer`, `C`, … |
-| `--out DIR` | Write `report.json` (and probe screenshots) to `DIR/<host>/<timestamp>/` |
-| `--json` | Print the report JSON to stdout |
-| `--checkout` | Run the headless cart/checkout probe — **only for shops you may test**; adds 1 item to an anonymous cart, stops at checkout entry, robots.txt respected |
-| `--checkout-consent` | The merchant asked for the scan: probe may also enter cart/checkout paths that robots.txt disallows |
-| `--gmc-active / --gmc-inactive`, `--gmc-disapproved-pct` | Manual Merchant Center input for D5 (never guessed) |
-| `--timeout` | Hard scan timeout in seconds (default 120) |
-| `--visibility` | V1 AI visibility via OpenRouter — costs money (≈ USD 1.15 per full scan; hard caps USD 1.40/scan and USD 10/month; needs `OPENROUTER_API_KEY`) |
-| `--visibility-prompts FILE` | Own V1 questions, one per line (replaces the generated ones) |
-
-Every result has a status (`pass`, `warn`, `fail`, `not_applicable`, `error`), a score
-fraction, evidence (URL, detail, snippet) and NL/EN fix guidance. Blocked, rate-limited or
-unverifiable checks report `error` with the reason — never a guessed `fail`.
-
-## Safety
-The scanner can never pay, order, log in or type into a shop: GET-only HTTP client,
-network guards that block payment providers, order paths and non-GET requests in the
-browser, a never-click list, and an opt-in probe. Proven by `tests/test_safety.py`
-(including a mutation check). Polite crawling: robots.txt, 1 req/s per host, Retry-After,
-≤ 40 pages, captchas never bypassed. Details: [`docs/SAFETY.md`](docs/SAFETY.md).
-
-## Documentation
-- [`CLAUDE.md`](CLAUDE.md) — working rules, architecture as built, decisions, status
-- [`SPEC.md`](SPEC.md) — check catalogue, scoring, build steps, acceptance criteria
-- [`docs/NEXT_STEP.md`](docs/NEXT_STEP.md) — hand-off for build step 3 (AI visibility)
-- [`docs/VERIFY.md`](docs/VERIFY.md) — reference shops, verification runs, known limits
-- [`docs/SAFETY.md`](docs/SAFETY.md) — safety guarantees and how they are enforced
-
-## Development
-```bash
-uv run ruff check . && uv run mypy scanner && uv run pytest   # ~12 s, 232 tests
+## Layout
 ```
-Tests are fixture-based and offline; the probe tests drive real headless Chromium against
-fake shops served through Playwright routes.
+ap2check/
+  fetch.py        # the only network code: GET only, no redirects, SSRF + robots + rate limits
+  robots.py       # RFC 9309 parser
+  jose.py         # JCS (RFC 8785), EC JWKs, ES256/384/512 verification (verify only)
+  checks/         # base.py (spec URLs, guidance), profile.py (U*, A*), agent_card.py (G*),
+                  # signature.py (M1)
+  runner.py       # normalise URL -> fetch -> checks -> verdict -> Report
+  cli.py          # typer: check, serve
+  web/app.py      # FastAPI: GET /, POST /api/check, /healthz; rate limits, CSP
+  web/static/     # index.html, app.css, app.js (no build step)
+tests/            # fixtures built in tests/helpers.py; test_safety.py proves the guarantees
+docs/             # AP2.md (research), SAFETY.md, VERIFY.md (log)
+```
