@@ -1,4 +1,4 @@
-# Safety guarantees (status 2026-11-13)
+# Safety guarantees (status 2026-11-13; project parked 2026-11-15, code unchanged since)
 
 What the AP2 Readiness Check can and cannot do to a merchant, and how each point is enforced.
 Technical summary, not legal advice.

@@ -5,6 +5,13 @@ A website (and CLI) that tells a merchant whether they are set up correctly to a
 fetches the merchant's public discovery documents and, optionally, verifies the signature on
 one checkout response the merchant pastes in. It never calls the merchant's checkout.
 
+> **Status: parked (2026-11-15).** The code is complete and tested (107 tests, ruff and
+> `mypy --strict` clean) but is not deployed and not being developed further. A market check
+> found that no live agent checkout requires AP2 yet, that free UCP/AP2 checkers already
+> exist, and that platforms and payment providers are absorbing the implementation work.
+> Details: [`docs/AP2.md`](docs/AP2.md#market-check-2026-11-15). The protocol facts in this
+> repository were last checked on 2026-11-13; re-check them before relying on any result.
+
 Based on AP2 v0.2 (2026-04-28, now under FIDO Alliance standardisation), UCP 2026-08-25
 (AP2 mandates extension) and A2A 1.0. Research notes: [`docs/AP2.md`](docs/AP2.md).
 Check catalogue and verdict rules: [`SPEC.md`](SPEC.md).
@@ -46,7 +53,8 @@ ap2check/
   runner.py       # normalise URL -> fetch -> checks -> verdict -> Report
   demo.py         # built-in demo shop (static documents in demo_data/, no network)
   cli.py          # typer: check, demo, serve
-  web/app.py      # FastAPI: GET /, POST /api/check, /healthz; rate limits, CSP
+  web/app.py      # FastAPI: GET /, POST /api/check, GET /api/demo/{scenario}, /healthz;
+                  # rate limits, CSP
   web/static/     # index.html, app.css, app.js (no build step)
 tests/            # fixtures built in tests/helpers.py; test_safety.py proves the guarantees
 scripts/          # make_demo_fixture.py: regenerates demo_data/ (signs, then discards the key)

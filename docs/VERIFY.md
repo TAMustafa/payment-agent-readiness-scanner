@@ -90,6 +90,16 @@ One check each (3 GETs), 2 s apart, via the CLI.
 - Website buttons, `GET /api/demo/{scenario}`, `ap2check demo`. Browser check: "A shop that
   passes" → "Set up to accept AP2 payment requests", 5 of 5, 8 OK. 107 tests green.
 
+## 2026-11-15 — market check; project parked
+- Market check by web search (`docs/AP2.md`, "Market check 2026-11-15"): no live agent
+  checkout requires AP2; free UCP/AP2 checkers and an AP2-signing WooCommerce plugin already
+  exist; platforms and PSPs are absorbing the implementation work.
+- Decision (Tarek): the app is not pursued further. Not deployed; no pilots run.
+- Final state: `uv run ruff check . && uv run mypy ap2check && uv run pytest` clean,
+  **107 tests green**. Documentation updated to say so (README, CLAUDE.md, SPEC.md).
+- Correction to the 2026-11-13 cleanup entry above: the request budget is 5 since robots.txt
+  redirects are followed (3 files plus at most 2 redirect hops), not 3.
+
 ## Known limits
 - No live merchant with AP2 declared exists in our sample yet (see the live round above).
 - UCP signs the full checkout JSON; if a merchant's JCS differs from ours on exotic numbers

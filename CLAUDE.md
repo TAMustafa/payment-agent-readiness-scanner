@@ -8,7 +8,8 @@ response from their test checkout and we verify their merchant signature.
 
 **Pivot (Tarek, 2026-11-13):** the earlier webshop AI-readiness scanner was dropped (market
 direction, cost, too many sites pass/fail on generic checks). Its code is in git history up
-to commit 4cd9af7; uncommitted work from 2026-11-12 is in `git stash list` ("pre-AP2-pivot").
+to commit 4cd9af7; uncommitted work from 2026-11-12 is in `git stash list` ("pre-AP2-pivot"),
+which exists only in Tarek's local clone (a stash is not pushed to GitHub).
 
 Business model (context, not code): free self-check = lead magnet → paid setup sprint
 (keys, UCP profile, signing, mandate verification) → monitoring. Owner: Tarek (solo founder).
@@ -17,13 +18,18 @@ Read `SPEC.md` (checks, verdict, website) and `docs/AP2.md` (protocol facts + so
 changing any check. AP2 v0.2 is pre-release (FIDO standardisation); never claim in copy that
 agents will send orders, or that agent checkout is live in a given market.
 
-## Current status (2026-11-13) — start here
-- Built: checks U1–U5, A1–A2, G1–G2, M1, verdict, CLI, FastAPI website. 107 tests green;
-  ruff + mypy --strict clean. Log: `docs/VERIFY.md`.
+## Current status (2026-11-15) — start here
+- **Parked (Tarek, 2026-11-15).** Not deployed, no further development planned. Reason: a
+  market check (`docs/AP2.md`, "Market check 2026-11-15") found no live agent checkout that
+  requires AP2, existing free UCP/AP2 checkers, and AP2-capable plugins and PSP layers
+  already on sale. Do not start new features unless Tarek reopens the project.
+- Built: checks U1–U5, A1–A2, G1–G2, M1, verdict, CLI, FastAPI website, built-in demo shop.
+  107 tests green; ruff + mypy --strict clean. Log: `docs/VERIFY.md`.
 - Live round 2026-11-13 (10 shops, `docs/VERIFY.md`): Shopify shops pass steps 1–2, none
-  declares AP2 yet; no shop with a passing AP2 setup found.
-- **Next:** find or build a merchant with AP2 declared (ask Tarek per site) and a sample
-  merchant from the AP2 v0.2 Python sample; then deployment (host, domain, contact URL).
+  declares AP2 yet; no shop with a passing AP2 setup found. Steps 3–5 are proven on fixtures
+  and the demo shop only.
+- If reopened: re-check every source in `docs/AP2.md` first (last checked 2026-11-13), then
+  live verification against a merchant with AP2 declared, then deployment.
 - **Repo:** github.com/TAMustafa/payment-agent-readiness-scanner, branch `main`. Tarek commits
   to `main` in this existing repo; commit/push only when he asks.
 

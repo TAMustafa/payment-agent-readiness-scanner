@@ -3,6 +3,10 @@
 Version 0.2 (2026-11-13). Supersedes the agent-ready-scanner spec (in git history up to
 commit 4cd9af7). Background and sources: `docs/AP2.md`.
 
+**Status 2026-11-15: parked.** This spec describes the product as built. Build steps 2 and 3
+(§8) and everything in §7 were not done and are not planned; see `docs/AP2.md`, "Market check
+2026-11-15".
+
 ## 1. Product
 A website (plus CLI) where a merchant enters their domain and learns whether they are set up
 correctly to **accept AP2 (Agent Payments Protocol) payment requests** from AI shopping
@@ -96,6 +100,8 @@ testable read-only; sample privacy.
 ## 8. Build steps
 1. ✅ Checks U1–U5, A1–A2, G1–G2, M1 with fixture tests; CLI; website (2026-11-13).
 1b. ✅ Built-in demo merchant (passing, no-AP2 and broken-signature reports) (2026-11-13).
-2. Live verification against public UCP profiles (needs Tarek's go-ahead per site) and a
-   sample merchant built from the AP2 v0.2 Python sample; record in `docs/VERIFY.md`.
-3. Deploy (host + domain + contact URL), then pilots with merchants/agencies.
+2. Partly done: live verification against public UCP profiles (10 shops, 2026-11-13, in
+   `docs/VERIFY.md`) confirmed U1–U5; no shop with AP2 declared was found. Not done: a
+   sample merchant built from the AP2 v0.2 Python sample.
+3. Not done (project parked 2026-11-15): deploy (host + domain + contact URL), then pilots
+   with merchants/agencies.

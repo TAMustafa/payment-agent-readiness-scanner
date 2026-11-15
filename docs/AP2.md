@@ -81,6 +81,52 @@ UCP 2026-08-25, https://ucp.dev/2026-08-25/specification/payment/extensions/ap2-
 - PSP / Merchant Payment Processor readiness (not visible publicly).
 - Whether any agent platform (Google AI Mode/Gemini) has enrolled the merchant.
 
+## Market check 2026-11-15
+Why the project was parked. Unlike the rest of this file, this section comes from web search
+summaries of mostly secondary sources (blogs, vendor pages); the pages were not opened and
+verified one by one, and the protocol sources below were not re-read.
+
+- **AP2 is not required by any live agent checkout.** Google's Merchant Center help and
+  developer pages call UCP "compatible with" AP2. No adoption figures from FIDO were found.
+- **Google's UCP checkout is narrow and gated:** select merchants in the US, Canada and
+  Australia, UK expected next, no EU date; each integration needs Google's approval and a
+  payment provider that processes Google Pay tokens.
+- **ChatGPT Instant Checkout was scaled back** around March 2026 (retired or paused, sources
+  disagree) after about a dozen Shopify merchants went live. ACP is still maintained by
+  OpenAI and Stripe.
+- **Platforms and PSPs are absorbing the implementation work:** Shopify agent storefronts on
+  by default; Adobe committed to UCP, ACP and AP2; Adyen Agentic (2026-06-16) covers UCP,
+  AP2 and ACP in one integration.
+- **Netherlands:** one Dutch analysis notes the protocols assume card payments while Dutch
+  checkout runs on iDEAL, so the buyer is handed back to the shop's own site.
+- **Existing checkers:** ucp-ready (open source, UCP + AP2), UCPtools (free UCP + ACP check,
+  monitoring about $9/month per a third-party listing), Apify Agentic Commerce Readiness
+  Index, agenticcommerce.shop scanner, Adam Silva Consulting (paid audit).
+- **Existing AP2 implementation:** UCPReady for WooCommerce (Zologic, NL) states it signs
+  every checkout response with `ap2.merchant_authorization`; €149 (sources disagree on
+  one-time or yearly). Its developer reported a capability-name mismatch that silently
+  disabled AP2, the kind of fault check M1 exists to catch. Whether the other checkers
+  verify signatures was not confirmed.
+
+Conclusion: a free check is not a differentiator, monitoring has a low price ceiling, and a
+plugin would compete with a €149 product. If the project is reopened, the more credible
+shape is an independent UCP-first setup-and-verification service for EU shops and agencies,
+tested with five to ten conversations before more code is written.
+
+Sources (search results, 2026-11-15):
+https://support.google.com/merchants/answer/16837055 ·
+https://developers.google.com/merchant/ucp · https://shopify.engineering/UCP ·
+https://openai.com/index/buy-it-in-chatgpt/ ·
+https://thepaypers.com/payments/news/google-donates-agent-payments-protocol-to-fido-alliance ·
+https://github.com/monkydot/ucp-ready · https://ucptools.dev/ ·
+https://www.g2.com/products/ucptools/pricing ·
+https://apify.com/yasaslive/agentic-commerce-radar · https://www.agenticcommerce.shop/ ·
+https://www.adamsilvaconsulting.com/services/acra · https://zologic.nl/ucpready/ ·
+https://dev.to/zologic/ap2-mandates-are-live-on-ucpready-heres-what-that-actually-means-for-autonomous-payment-1bba ·
+https://sanbi.ai/blog/agentic-commerce-tracker-ai-checkout ·
+https://cruxdigits.nl/blog/agentic-commerce-protocols-ucp-acp-ap2/ ·
+https://lexagentica.com/blog/ucp-commercial-guide-eu-commerce-leaders
+
 ## Sources (read 2026-11-13)
 - [primary] https://ap2-protocol.org/ap2/specification/, /ap2/checkout_mandate/,
   /ap2/payment_mandate/, /ap2/agent_authorization/, /ap2/flows/
